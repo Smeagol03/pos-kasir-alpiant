@@ -187,6 +187,7 @@ pub async fn create_product(
                 let session = crate::auth::guard::validate_admin(&state, &session_token)?;
                 crate::commands::activity_cmd::log_stock_adjustment(
                     &state.db,
+                    None,
                     id,
                     session.user_id,
                     "IN",
@@ -200,6 +201,7 @@ pub async fn create_product(
             let session = crate::auth::guard::validate_admin(&state, &session_token)?;
             crate::commands::activity_cmd::log_activity(
                 &state.db,
+                None,
                 Some(session.user_id),
                 "CREATE_PRODUCT",
                 &format!("Membuat produk baru: {}", payload.name),
@@ -257,6 +259,7 @@ pub async fn update_product(
             let session = crate::auth::guard::validate_admin(&state, &session_token)?;
             crate::commands::activity_cmd::log_activity(
                 &state.db,
+                None,
                 Some(session.user_id),
                 "UPDATE_PRODUCT",
                 &format!("Memperbarui produk ID {}: {}", id, payload.name),
@@ -316,6 +319,7 @@ pub async fn adjust_stock(
     let session = crate::auth::guard::validate_admin(&state, &session_token)?;
     crate::commands::activity_cmd::log_stock_adjustment(
         &state.db,
+        None,
         product_id,
         session.user_id,
         if delta > 0 { "IN" } else { "OUT" },
@@ -327,6 +331,7 @@ pub async fn adjust_stock(
     // Log Activity
     crate::commands::activity_cmd::log_activity(
         &state.db,
+        None,
         Some(session.user_id),
         "ADJUST_STOCK",
         &format!("Menyesuaikan stok produk ID {}: {} (menjadi {})", product_id, delta, new_stock),
@@ -355,6 +360,7 @@ pub async fn delete_product(
     let session = crate::auth::guard::validate_admin(&state, &session_token)?;
     crate::commands::activity_cmd::log_activity(
         &state.db,
+        None,
         Some(session.user_id),
         "DELETE_PRODUCT",
         &format!("Menghapus (soft-delete) produk ID {}", product_id),

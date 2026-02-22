@@ -29,12 +29,12 @@ export default function POSPage() {
   const sessionToken = useAuthStore((s) => s.sessionToken);
   const user = useAuthStore((s) => s.user);
   const {
+    items,
     addItem,
     setTaxConfig,
     getSubtotal,
     setDiscount,
     manual_discount_applied,
-    items,
   } = useCartStore();
   const { toast } = useToast();
 
@@ -122,7 +122,11 @@ export default function POSPage() {
           },
         );
 
-        if (product.stock > 0) {
+        // Check stock before adding
+        const cartItem = items.find((item) => item.product_id === product.id);
+        const currentQuantity = cartItem ? cartItem.quantity : 0;
+
+        if (product.stock > 0 && currentQuantity < product.stock) {
           addItem({
             product_id: product.id,
             product_name: product.name,
@@ -131,21 +135,21 @@ export default function POSPage() {
             discount_amount: 0,
           });
           toast({
-            title: "Added to Cart",
-            description: `${product.name} scanned successfully.`,
+            title: "Berhasil Menambahkan",
+            description: `${product.name} telah ditambahkan ke keranjang.`,
           });
         } else {
           toast({
             variant: "destructive",
-            title: "Out of Stock",
-            description: `${product.name} is out of stock.`,
+            title: "Stok Tidak Mencukupi",
+            description: `${product.name} habis atau mencapai batas stok yang tersedia (${product.stock}).`,
           });
         }
       } catch (error) {
         toast({
           variant: "destructive",
-          title: "Product Not Found",
-          description: `No product found for barcode: ${barcode}`,
+          title: "Produk Tidak Ditemukan",
+          description: `Barcode ${barcode} tidak terdaftar.`,
         });
       }
     },

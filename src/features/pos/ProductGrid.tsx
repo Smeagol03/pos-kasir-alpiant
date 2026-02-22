@@ -29,7 +29,17 @@ export function ProductGrid() {
     { sessionToken, search, categoryId, showInactive: false },
   );
 
+  const { items } = useCartStore();
+
   const handleAddToCart = (p: ProductWithCategory) => {
+    const cartItem = items.find((item) => item.product_id === p.id);
+    const currentQuantity = cartItem ? cartItem.quantity : 0;
+
+    if (currentQuantity >= p.stock) {
+      alert(`Stok tidak mencukupi. Stok tersedia: ${p.stock}`);
+      return;
+    }
+
     addItem({
       product_id: p.id,
       product_name: p.name,
@@ -37,6 +47,14 @@ export function ProductGrid() {
       quantity: 1,
       discount_amount: 0,
     });
+  };
+
+  // Function to get stock badge color and variant
+  const getStockStatus = (stock: number) => {
+    if (stock <= 0) return { color: "bg-red-500 text-white border-transparent", label: "Habis" };
+    if (stock < 10) return { color: "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400", label: `Kritis: ${stock}` };
+    if (stock < 50) return { color: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400", label: `Menipis: ${stock}` };
+    return { color: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400", label: `Stok: ${stock}` };
   };
 
   // Function to get initials or placeholder for product
@@ -138,9 +156,9 @@ export function ProductGrid() {
                       <div className="font-black text-slate-900 dark:text-white">
                         {formatRupiah(p.price)}
                       </div>
-                      <Badge variant={p.stock <= 5 ? "destructive" : "secondary"} className="text-[10px] h-5 font-bold rounded-md px-1.5">
-                        {p.stock}
-                      </Badge>
+                      <div className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${getStockStatus(p.stock).color}`}>
+                        {getStockStatus(p.stock).label}
+                      </div>
                     </div>
                   </div>
                 </CardContent>

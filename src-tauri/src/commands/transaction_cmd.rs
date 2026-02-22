@@ -148,6 +148,7 @@ pub async fn create_transaction(
         // Log Stock Adjustment (SALE)
         crate::commands::activity_cmd::log_stock_adjustment(
             &state.db,
+            Some(&mut tx),
             item.product_id,
             session.user_id,
             "OUT",
@@ -157,16 +158,17 @@ pub async fn create_transaction(
         ).await;
     }
 
-    tx.commit().await.map_err(|e| e.to_string())?;
-
-    // Log Activity
+    // Log Activity within transaction
     crate::commands::activity_cmd::log_activity(
         &state.db,
+        Some(&mut tx),
         Some(session.user_id),
         "CREATE_TRANSACTION",
         &format!("Transaksi baru berhasil: {}", transaction_id),
         None,
     ).await;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     let saved = sqlx::query_as::<_, Transaction>("SELECT * FROM transactions WHERE id = ?")
         .bind(&transaction_id)
@@ -229,6 +231,7 @@ pub async fn void_transaction(
         // Log Stock Adjustment (VOID)
         crate::commands::activity_cmd::log_stock_adjustment(
             &state.db,
+            Some(&mut tx),
             product_id,
             session.user_id,
             "IN",
@@ -238,16 +241,17 @@ pub async fn void_transaction(
         ).await;
     }
 
-    tx.commit().await.map_err(|e| e.to_string())?;
-
-    // Log Activity
+    // Log Activity within transaction
     crate::commands::activity_cmd::log_activity(
         &state.db,
+        Some(&mut tx),
         Some(session.user_id),
         "VOID_TRANSACTION",
         &format!("Membatalkan transaksi: {}", transaction_id),
         None,
     ).await;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }

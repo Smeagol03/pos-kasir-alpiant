@@ -68,25 +68,37 @@ pub async fn get_stock_history(
 /// Helper internal untuk mencatat aktivitas
 pub async fn log_activity(
     db: &sqlx::SqlitePool,
+    tx: Option<&mut sqlx::Transaction<'_, sqlx::Sqlite>>,
     user_id: Option<i64>,
     action: &str,
     description: &str,
     metadata: Option<&str>,
 ) {
-    let _ = sqlx::query(
-        "INSERT INTO activity_logs (user_id, action, description, metadata) VALUES (?, ?, ?, ?)"
-    )
-    .bind(user_id)
-    .bind(action)
-    .bind(description)
-    .bind(metadata)
-    .execute(db)
-    .await;
+    let sql = "INSERT INTO activity_logs (user_id, action, description, metadata) VALUES (?, ?, ?, ?)";
+    
+    if let Some(transaction) = tx {
+        let _ = sqlx::query(sql)
+            .bind(user_id)
+            .bind(action)
+            .bind(description)
+            .bind(metadata)
+            .execute(&mut **transaction)
+            .await;
+    } else {
+        let _ = sqlx::query(sql)
+            .bind(user_id)
+            .bind(action)
+            .bind(description)
+            .bind(metadata)
+            .execute(db)
+            .await;
+    }
 }
 
 /// Helper internal untuk mencatat penyesuaian stok
 pub async fn log_stock_adjustment(
     db: &sqlx::SqlitePool,
+    tx: Option<&mut sqlx::Transaction<'_, sqlx::Sqlite>>,
     product_id: i64,
     user_id: i64,
     adj_type: &str,
@@ -94,15 +106,27 @@ pub async fn log_stock_adjustment(
     reason: &str,
     notes: Option<&str>,
 ) {
-    let _ = sqlx::query(
-        "INSERT INTO stock_adjustments (product_id, user_id, type, quantity, reason, notes) VALUES (?, ?, ?, ?, ?, ?)"
-    )
-    .bind(product_id)
-    .bind(user_id)
-    .bind(adj_type)
-    .bind(quantity)
-    .bind(reason)
-    .bind(notes)
-    .execute(db)
-    .await;
+    let sql = "INSERT INTO stock_adjustments (product_id, user_id, type, quantity, reason, notes) VALUES (?, ?, ?, ?, ?, ?)";
+    
+    if let Some(transaction) = tx {
+        let _ = sqlx::query(sql)
+            .bind(product_id)
+            .bind(user_id)
+            .bind(adj_type)
+            .bind(quantity)
+            .bind(reason)
+            .bind(notes)
+            .execute(&mut **transaction)
+            .await;
+    } else {
+        let _ = sqlx::query(sql)
+            .bind(product_id)
+            .bind(user_id)
+            .bind(adj_type)
+            .bind(quantity)
+            .bind(reason)
+            .bind(notes)
+            .execute(db)
+            .await;
+    }
 }

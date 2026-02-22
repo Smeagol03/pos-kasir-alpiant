@@ -92,6 +92,7 @@ pub async fn login(
     // Log Activity
     crate::commands::activity_cmd::log_activity(
         &state.db,
+        None,
         Some(user.id),
         "LOGIN",
         &format!("User {} berhasil login", user.username),
@@ -132,6 +133,7 @@ pub async fn logout(
     if let Some(id) = user_id {
         crate::commands::activity_cmd::log_activity(
             &state.db,
+            None,
             Some(id),
             "LOGOUT",
             "User melakukan logout",
