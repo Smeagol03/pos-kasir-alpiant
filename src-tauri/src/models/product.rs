@@ -9,6 +9,7 @@ pub struct Product {
     pub price: f64,
     pub stock: i64,
     pub barcode: Option<String>,
+    pub image_path: Option<String>,
     pub is_active: bool,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -25,6 +26,7 @@ pub struct ProductWithCategory {
     pub price: f64,
     pub stock: i64,
     pub barcode: Option<String>,
+    pub image_path: Option<String>,
     pub is_active: bool,
 }
 
@@ -50,6 +52,7 @@ pub struct CreateProductPayload {
     pub category_id: Option<i64>,
     pub price: f64,
     pub stock: i64,
+    pub image_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -60,4 +63,5 @@ pub struct UpdateProductPayload {
     pub category_id: Option<i64>,
     pub price: f64,
     pub is_active: bool,
+    pub image_path: Option<String>,
 }

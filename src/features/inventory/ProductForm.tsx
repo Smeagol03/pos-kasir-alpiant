@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { RefreshCw, Upload, Image as ImageIcon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +24,7 @@ import { useInvokeMutation, useInvokeQuery } from "../../hooks/useInvokeQuery";
 import { useAuthStore } from "../../store/authStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "../../hooks/use-toast";
+import { Product } from "../../types";
 
 export function ProductForm({
   open,
@@ -41,6 +44,7 @@ export function ProductForm({
     stock: "",
     is_active: true,
   });
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const sessionToken = useAuthStore((s) => s.sessionToken);
   const queryClient = useQueryClient();
@@ -74,24 +78,105 @@ export function ProductForm({
         is_active: true,
       });
     }
+    setSelectedImage(null);
   }, [product, open]);
 
-  const createMutation = useInvokeMutation("create_product", {
-    onSuccess: () => {
+  const saveImageMutation = useInvokeMutation<string, any>(
+    "save_product_image",
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["products"] });
+        toast({ title: "Success", description: "Product image saved" });
+        onOpenChange(false);
+      },
+      onError: (e) => {
+        queryClient.invalidateQueries({ queryKey: ["products"] });
+        toast({
+          variant: "destructive",
+          title: "Warning",
+          description:
+            "Product saved, but failed to upload image: " + String(e),
+        });
+        onOpenChange(false);
+      },
+    },
+  );
+
+  const generateBarcodeMutation = useInvokeMutation<string, any>(
+    "generate_barcode",
+    {
+      onSuccess: (newBarcode) => {
+        setFormData((prev) => ({ ...prev, barcode: newBarcode }));
+        queryClient.invalidateQueries({ queryKey: ["products"] });
+        toast({
+          title: "Success",
+          description: "Barcode generated: " + newBarcode,
+        });
+      },
+      onError: (e) =>
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: String(e),
+        }),
+    },
+  );
+
+  const handleImageSelect = async () => {
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        filters: [
+          {
+            name: "Image",
+            extensions: ["png", "jpg", "jpeg", "webp"],
+          },
+        ],
+      });
+      if (selected) {
+        setSelectedImage(selected as string);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleCreateSuccess = (newProduct: Product) => {
+    if (selectedImage) {
+      saveImageMutation.mutate({
+        sessionToken,
+        productId: newProduct.id,
+        filePath: selectedImage,
+      });
+    } else {
       queryClient.invalidateQueries({ queryKey: ["products"] });
       toast({ title: "Success", description: "Product created" });
       onOpenChange(false);
-    },
+    }
+  };
+
+  const handleUpdateSuccess = (updatedProduct: Product) => {
+    if (selectedImage) {
+      saveImageMutation.mutate({
+        sessionToken,
+        productId: updatedProduct.id,
+        filePath: selectedImage,
+      });
+    } else {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast({ title: "Success", description: "Product updated" });
+      onOpenChange(false);
+    }
+  };
+
+  const createMutation = useInvokeMutation<Product, any>("create_product", {
+    onSuccess: handleCreateSuccess,
     onError: (e) =>
       toast({ variant: "destructive", title: "Error", description: String(e) }),
   });
 
-  const updateMutation = useInvokeMutation("update_product", {
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["products"] });
-      toast({ title: "Success", description: "Product updated" });
-      onOpenChange(false);
-    },
+  const updateMutation = useInvokeMutation<Product, any>("update_product", {
+    onSuccess: handleUpdateSuccess,
     onError: (e) =>
       toast({ variant: "destructive", title: "Error", description: String(e) }),
   });
@@ -116,7 +201,17 @@ export function ProductForm({
     }
   };
 
-  const loading = createMutation.isPending || updateMutation.isPending;
+  const handleGenerateBarcode = () => {
+    if (product) {
+      generateBarcodeMutation.mutate({ sessionToken, productId: product.id });
+    }
+  };
+
+  const loading =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    saveImageMutation.isPending ||
+    generateBarcodeMutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -149,12 +244,53 @@ export function ProductForm({
             </div>
             <div className="space-y-2">
               <Label>Barcode</Label>
-              <Input
-                value={formData.barcode}
-                onChange={(e) =>
-                  setFormData({ ...formData, barcode: e.target.value })
-                }
-              />
+              <div className="flex gap-2">
+                <Input
+                  value={formData.barcode}
+                  onChange={(e) =>
+                    setFormData({ ...formData, barcode: e.target.value })
+                  }
+                />
+                {product && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={handleGenerateBarcode}
+                    disabled={generateBarcodeMutation.isPending}
+                    title="Generate Barcode (EAN-13)"
+                  >
+                    <RefreshCw
+                      className={`h-4 w-4 ${generateBarcodeMutation.isPending ? "animate-spin" : ""}`}
+                    />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Product Image</Label>
+            <div className="flex items-center gap-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleImageSelect}
+                className="w-full"
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                {selectedImage ? "Change Image" : "Select Image"}
+              </Button>
+              {(selectedImage || (product as any)?.image_path) && (
+                <div className="flex-shrink-0 text-xs text-muted-foreground flex items-center gap-1 bg-muted px-2 py-1 rounded">
+                  <ImageIcon className="h-4 w-4" />
+                  <span className="truncate max-w-[150px]">
+                    {selectedImage
+                      ? selectedImage.split(/[\\/]/).pop()
+                      : "Current Image Set"}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

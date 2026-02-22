@@ -34,6 +34,7 @@ export function ProductGrid() {
       product_name: p.name,
       price: p.price,
       quantity: 1,
+      discount_amount: 0,
     });
   };
 

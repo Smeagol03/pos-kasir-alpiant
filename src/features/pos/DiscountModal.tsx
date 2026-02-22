@@ -12,6 +12,7 @@ import { useAuthStore } from "../../store/authStore";
 import { useCartStore } from "../../store/cartStore";
 import { formatRupiah } from "../../lib/currency";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import { Badge } from "../../components/ui/badge";
 
 export function DiscountModal({
   open,
@@ -40,15 +41,15 @@ export function DiscountModal({
     }
 
     if (discount.type === "NOMINAL") {
-      setDiscount(discount.id, discount.value);
+      setDiscount(discount.id, discount.name, discount.value, null, true);
     } else {
-      setDiscount(discount.id, 0, discount.value);
+      setDiscount(discount.id, discount.name, 0, discount.value, true);
     }
     onOpenChange(false);
   };
 
   const handleClearDiscount = () => {
-    setDiscount(null, 0, null);
+    setDiscount(null, null, 0, null, false);
     onOpenChange(false);
   };
 
@@ -81,7 +82,12 @@ export function DiscountModal({
                     onClick={() => handleSelectDiscount(d)}
                     disabled={subtotal < d.min_purchase}
                   >
-                    <span className="font-bold">{d.name}</span>
+                    <div className="flex justify-between w-full items-start">
+                      <span className="font-bold">{d.name}</span>
+                      <Badge variant={d.is_automatic ? "default" : "secondary"}>
+                        {d.is_automatic ? "Auto" : "Manual"}
+                      </Badge>
+                    </div>
                     <span className="text-sm text-muted-foreground">
                       {d.type === "PERCENT"
                         ? `${d.value}% Off`

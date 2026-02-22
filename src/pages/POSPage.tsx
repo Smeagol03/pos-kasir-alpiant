@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ProductGrid } from "../features/pos/ProductGrid";
 import { CartPanel } from "../features/pos/CartPanel";
 import { DiscountModal } from "../features/pos/DiscountModal";
 import { PaymentModal } from "../features/pos/PaymentModal";
 import { useBarcodeScanner } from "../hooks/useBarcodeScanner";
-import { ProductWithCategory } from "../types";
+import { ProductWithCategory, AppSettings, Discount } from "../types";
 import { useAuthStore } from "../store/authStore";
 import { useCartStore } from "../store/cartStore";
 import { invoke } from "../lib/tauri";
@@ -14,8 +14,76 @@ export default function POSPage() {
   const [discountModalOpen, setDiscountModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const sessionToken = useAuthStore((s) => s.sessionToken);
-  const addItem = useCartStore((s) => s.addItem);
+  const { 
+    addItem, 
+    setTaxConfig, 
+    getSubtotal, 
+    setDiscount, 
+    manual_discount_applied,
+    items 
+  } = useCartStore();
   const { toast } = useToast();
+
+  // Load Settings (Tax)
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await invoke<AppSettings>("get_settings", { sessionToken });
+        setTaxConfig(
+          settings.tax.rate,
+          settings.tax.is_included,
+          settings.tax.label,
+          settings.tax.is_enabled
+        );
+      } catch (error) {
+        console.error("Failed to load settings:", error);
+      }
+    };
+    loadSettings();
+  }, [sessionToken, setTaxConfig]);
+
+  // Automatic Discount Logic
+  useEffect(() => {
+    if (manual_discount_applied || items.length === 0) return;
+
+    const applyAutoDiscount = async () => {
+      try {
+        const discounts = await invoke<Discount[]>("get_discounts", { sessionToken });
+        const subtotal = getSubtotal();
+        
+        // Filter automatic and active discounts that meet min_purchase
+        const validAutoDiscounts = discounts.filter(d => 
+          d.is_active && d.is_automatic && subtotal >= d.min_purchase
+        );
+
+        if (validAutoDiscounts.length > 0) {
+          // Find the one with most benefit
+          // For simplicity, let's pick the one with highest value (if same type)
+          // or just the first one for now, or you can implement complex logic
+          const bestDiscount = validAutoDiscounts.reduce((prev, current) => {
+            const prevVal = prev.type === 'PERCENT' ? subtotal * (prev.value / 100) : prev.value;
+            const currVal = current.type === 'PERCENT' ? subtotal * (current.value / 100) : current.value;
+            return currVal > prevVal ? current : prev;
+          });
+
+          setDiscount(
+            bestDiscount.id, 
+            bestDiscount.name, 
+            bestDiscount.type === 'NOMINAL' ? bestDiscount.value : 0,
+            bestDiscount.type === 'PERCENT' ? bestDiscount.value : null,
+            false // not manual
+          );
+        } else {
+          // Clear auto discount if no longer valid
+          setDiscount(null, null, 0, null, false);
+        }
+      } catch (error) {
+        console.error("Failed to fetch discounts:", error);
+      }
+    };
+
+    applyAutoDiscount();
+  }, [items, getSubtotal, sessionToken, manual_discount_applied, setDiscount]);
 
   useBarcodeScanner({
     onScan: async (barcode) => {
@@ -34,6 +102,7 @@ export default function POSPage() {
             product_name: product.name,
             price: product.price,
             quantity: 1,
+            discount_amount: 0,
           });
           toast({
             title: "Added to Cart",

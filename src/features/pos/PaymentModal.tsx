@@ -7,6 +7,7 @@ import {
   DialogFooter,
 } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 import { useCartStore } from "../../store/cartStore";
 import { formatRupiah } from "../../lib/currency";
 import { NumpadInput } from "./NumpadInput";
@@ -41,7 +42,6 @@ export function PaymentModal({
     discount_id,
     discount_amount,
     clearCart,
-    getTaxAmount,
   } = useCartStore();
 
   const total = getTotal();
@@ -71,13 +71,13 @@ export function PaymentModal({
           product_id: i.product_id,
           quantity: i.quantity,
           price_at_time: i.price,
+          discount_amount: i.discount_amount || 0,
         })),
-        total_amount: total,
         discount_id,
         discount_amount,
-        tax_amount: getTaxAmount(),
         payment_method: method,
         amount_paid: method === "CASH" ? amountPaid : total,
+        notes: "",
       };
 
       const transaction = await invoke<Transaction>("create_transaction", {
@@ -178,11 +178,34 @@ export function PaymentModal({
               <div className="text-sm text-muted-foreground mb-1">
                 Amount Given
               </div>
-              <div
-                className={`text-right text-3xl font-mono p-3 rounded-md border bg-background ${method !== "CASH" ? "opacity-50" : ""}`}
-              >
-                {formatRupiah(method === "CASH" ? amountPaid : total)}
-              </div>
+              <Input
+                type="text"
+                autoFocus
+                className={`text-right text-3xl font-mono h-14 p-3 rounded-md border bg-background ${method !== "CASH" ? "opacity-50" : ""}`}
+                value={
+                  method !== "CASH"
+                    ? formatRupiah(total)
+                    : amountPaidStr === "0"
+                      ? ""
+                      : amountPaidStr
+                }
+                disabled={method !== "CASH"}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^0-9]/g, "");
+                  setAmountPaidStr(val || "0");
+                }}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === "Enter" &&
+                    !loading &&
+                    method === "CASH" &&
+                    amountPaid >= total
+                  ) {
+                    handlePay();
+                  }
+                }}
+                placeholder={formatRupiah(total)}
+              />
             </div>
 
             <div

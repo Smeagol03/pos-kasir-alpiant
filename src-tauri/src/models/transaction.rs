@@ -46,6 +46,7 @@ pub struct TransactionItem {
     pub quantity: i64,
     pub price_at_time: f64,
     pub subtotal: f64,
+    pub discount_amount: f64,
 }
 
 /// Item transaksi dengan nama produk (JOIN result).
@@ -58,6 +59,7 @@ pub struct TransactionItemWithProduct {
     pub quantity: i64,
     pub price_at_time: f64,
     pub subtotal: f64,
+    pub discount_amount: f64,
 }
 
 /// Detail lengkap satu transaksi (untuk frontend).
@@ -68,13 +70,12 @@ pub struct TransactionDetail {
 }
 
 /// Payload membuat transaksi baru.
+/// Backend menghitung total_amount dan tax_amount sendiri dari settings.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateTransactionPayload {
     pub items: Vec<CreateTransactionItem>,
-    pub total_amount: f64,
     pub discount_id: Option<i64>,
     pub discount_amount: f64,
-    pub tax_amount: f64,
     pub payment_method: String,
     pub amount_paid: f64,
     pub notes: Option<String>,
@@ -85,6 +86,7 @@ pub struct CreateTransactionItem {
     pub product_id: i64,
     pub quantity: i64,
     pub price_at_time: f64,
+    pub discount_amount: f64, // diskon per item (0 jika tidak ada)
 }
 
 /// Hasil paginated untuk daftar transaksi.

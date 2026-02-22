@@ -2,7 +2,17 @@ import { useCartStore } from "../../store/cartStore";
 import { formatRupiah } from "../../lib/currency";
 import { Button } from "../../components/ui/button";
 import { ScrollArea } from "../../components/ui/scroll-area";
-import { Trash2, Plus, Minus, Tag, Banknote } from "lucide-react";
+import { Trash2, Plus, Minus, Tag, Banknote, Percent } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "../../components/ui/dialog";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import { useState } from "react";
 
 export function CartPanel({
   onCheckout,
@@ -17,23 +27,40 @@ export function CartPanel({
     removeItem,
     clearCart,
     getSubtotal,
+    getDiscountAmount,
     getTaxAmount,
     getTotal,
-    discount_amount,
+    discount_name,
     discount_percent,
     tax_rate,
     tax_included,
+    tax_label,
+    tax_enabled,
+    setItemDiscount,
   } = useCartStore();
 
+  const [discountItemOpen, setDiscountItemOpen] = useState<{
+    id: number;
+    name: string;
+    amount: number;
+  } | null>(null);
+  const [discountItemInput, setDiscountItemInput] = useState("");
+
+  const handleApplyItemDiscount = () => {
+    if (discountItemOpen) {
+      setItemDiscount(discountItemOpen.id, Number(discountItemInput) || 0);
+      setDiscountItemOpen(null);
+    }
+  };
+
   const subtotal = getSubtotal();
+  const discountTotal = getDiscountAmount();
   const tax = getTaxAmount();
   const total = getTotal();
 
-  let formattedDiscount = formatRupiah(discount_amount);
+  let formattedDiscount = formatRupiah(discountTotal);
   if (discount_percent !== null) {
-    formattedDiscount = `${discount_percent}% (-${formatRupiah(
-      subtotal * (discount_percent / 100),
-    )})`;
+    formattedDiscount = `${discount_percent}% (-${formatRupiah(discountTotal)})`;
   }
 
   return (
@@ -59,15 +86,43 @@ export function CartPanel({
                   <span className="font-medium text-sm line-clamp-2 pr-2">
                     {item.product_name}
                   </span>
-                  <span className="font-bold whitespace-nowrap">
-                    {formatRupiah(item.price * item.quantity)}
-                  </span>
+                  <div className="flex flex-col items-end">
+                    <span className="font-bold whitespace-nowrap">
+                      {formatRupiah(
+                        item.price * item.quantity -
+                          (item.discount_amount || 0),
+                      )}
+                    </span>
+                    {(item.discount_amount || 0) > 0 && (
+                      <span className="text-xs font-normal text-emerald-500">
+                        -{formatRupiah(item.discount_amount)}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mt-1">
                   <span className="text-muted-foreground text-xs">
                     {formatRupiah(item.price)} x {item.quantity}
                   </span>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-1">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7 mr-2"
+                      onClick={() => {
+                        setDiscountItemOpen({
+                          id: item.product_id,
+                          name: item.product_name,
+                          amount: item.discount_amount || 0,
+                        });
+                        setDiscountItemInput(
+                          (item.discount_amount || 0).toString(),
+                        );
+                      }}
+                      title="Item discount"
+                    >
+                      <Percent className="h-3 w-3" />
+                    </Button>
                     <Button
                       variant="outline"
                       size="icon"
@@ -109,16 +164,18 @@ export function CartPanel({
             <span>Subtotal</span>
             <span>{formatRupiah(subtotal)}</span>
           </div>
-          {(discount_amount > 0 || discount_percent !== null) && (
+          {discountTotal > 0 && (
             <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
-              <span>Discount</span>
+              <span className="flex items-center gap-1">
+                Discount {discount_name && `(${discount_name})`}
+              </span>
               <span>-{formattedDiscount}</span>
             </div>
           )}
-          {tax_rate > 0 && (
+          {tax_enabled && tax_rate > 0 && (
             <div className="flex justify-between text-muted-foreground">
               <span>
-                Tax ({tax_rate}%{tax_included ? " Incl." : ""})
+                {tax_label} ({tax_rate}%{tax_included ? " Incl." : ""})
               </span>
               <span>{formatRupiah(tax)}</span>
             </div>
@@ -158,6 +215,39 @@ export function CartPanel({
           <Banknote className="h-6 w-6" /> Pay
         </Button>
       </div>
+
+      {discountItemOpen && (
+        <Dialog
+          open={!!discountItemOpen}
+          onOpenChange={(open) => !open && setDiscountItemOpen(null)}
+        >
+          <DialogContent className="sm:max-w-[300px]">
+            <DialogHeader>
+              <DialogTitle>Discount for {discountItemOpen.name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Nominal Discount (Rp)</Label>
+                <Input
+                  type="number"
+                  autoFocus
+                  value={discountItemInput}
+                  onChange={(e) => setDiscountItemInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleApplyItemDiscount();
+                  }}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setDiscountItemOpen(null)}>
+                Cancel
+              </Button>
+              <Button onClick={handleApplyItemDiscount}>Apply</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

@@ -45,11 +45,12 @@ pub async fn create_discount(
     }
 
     let result =
-        sqlx::query("INSERT INTO discounts (name, type, value, min_purchase) VALUES (?, ?, ?, ?)")
+        sqlx::query("INSERT INTO discounts (name, type, value, min_purchase, is_automatic) VALUES (?, ?, ?, ?, ?)")
             .bind(&payload.name)
             .bind(&payload.r#type)
             .bind(payload.value)
             .bind(payload.min_purchase)
+            .bind(payload.is_automatic)
             .execute(&state.db)
             .await
             .map_err(|e| e.to_string())?;
@@ -85,12 +86,13 @@ pub async fn update_discount(
     }
 
     sqlx::query(
-        "UPDATE discounts SET name = ?, type = ?, value = ?, min_purchase = ?, is_active = ? WHERE id = ?"
+        "UPDATE discounts SET name = ?, type = ?, value = ?, min_purchase = ?, is_automatic = ?, is_active = ? WHERE id = ?"
     )
     .bind(&payload.name)
     .bind(&payload.r#type)
     .bind(payload.value)
     .bind(payload.min_purchase)
+    .bind(payload.is_automatic)
     .bind(payload.is_active)
     .bind(id)
     .execute(&state.db)

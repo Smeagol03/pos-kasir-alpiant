@@ -192,5 +192,45 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             .await?;
     }
 
+    // ═══════════════════════════════════════
+    // MIGRASI: Kolom baru (ALTER TABLE — aman untuk data existing)
+    // ═══════════════════════════════════════
+
+    // Diskon per-item transaksi
+    safe_add_column(
+        pool,
+        "transaction_items",
+        "discount_amount",
+        "REAL NOT NULL DEFAULT 0",
+    )
+    .await;
+
+    // Gambar produk
+    safe_add_column(pool, "products", "image_path", "TEXT DEFAULT ''").await;
+
+    // Diskon otomatis
+    safe_add_column(
+        pool,
+        "discounts",
+        "is_automatic",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    .await;
+
     Ok(())
+}
+
+/// Helper: ALTER TABLE ADD COLUMN yang aman (abaikan jika kolom sudah ada).
+async fn safe_add_column(pool: &SqlitePool, table: &str, column: &str, col_type: &str) {
+    let sql = format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, col_type);
+    match sqlx::query(&sql).execute(pool).await {
+        Ok(_) => {}
+        Err(e) => {
+            let msg = e.to_string();
+            // SQLite error jika kolom sudah ada: "duplicate column name"
+            if !msg.contains("duplicate column") {
+                eprintln!("Migration warning: {}", msg);
+            }
+        }
+    }
 }

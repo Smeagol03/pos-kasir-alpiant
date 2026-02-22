@@ -26,8 +26,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { Store, Receipt, Calculator, Printer, CheckCircle } from "lucide-react";
+import { Store, Receipt, Calculator, Printer, CheckCircle, Tag } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
+import { DiscountSettings } from "../features/settings/DiscountSettings";
 
 export default function SettingsPage() {
   const sessionToken = useAuthStore((s) => s.sessionToken);
@@ -109,18 +110,21 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="company" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 mb-4">
+        <TabsList className="grid w-full grid-cols-5 mb-4">
           <TabsTrigger value="company">
-            <Store className="h-4 w-4 mr-2" /> Company Profile
+            <Store className="h-4 w-4 mr-2" /> Store
           </TabsTrigger>
           <TabsTrigger value="receipt">
-            <Receipt className="h-4 w-4 mr-2" /> Receipt Layout
+            <Receipt className="h-4 w-4 mr-2" /> Receipt
           </TabsTrigger>
           <TabsTrigger value="tax">
             <Calculator className="h-4 w-4 mr-2" /> Taxation
           </TabsTrigger>
+          <TabsTrigger value="discounts">
+            <Tag className="h-4 w-4 mr-2" /> Discounts
+          </TabsTrigger>
           <TabsTrigger value="hardware">
-            <Printer className="h-4 w-4 mr-2" /> Hardware / Printer
+            <Printer className="h-4 w-4 mr-2" /> Hardware
           </TabsTrigger>
         </TabsList>
 
@@ -331,6 +335,14 @@ export default function SettingsPage() {
                   </Label>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="discounts">
+          <Card>
+            <CardContent className="pt-6">
+              <DiscountSettings />
             </CardContent>
           </Card>
         </TabsContent>

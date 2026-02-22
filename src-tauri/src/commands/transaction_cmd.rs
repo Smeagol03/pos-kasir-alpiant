@@ -3,8 +3,9 @@ use crate::models::transaction::{
     TransactionItemWithProduct, TransactionWithCashier,
 };
 use crate::AppState;
+use std::collections::HashMap;
 
-/// Buat transaksi baru
+/// Buat transaksi baru — pajak dihitung otomatis dari settings
 #[tauri::command]
 pub async fn create_transaction(
     state: tauri::State<'_, AppState>,
@@ -17,17 +18,75 @@ pub async fn create_transaction(
         return Err("Keranjang kosong".into());
     }
 
-    if payload.amount_paid < payload.total_amount {
-        return Err("Uang bayar tidak cukup".into());
+    // ── 1. Baca tax settings dari DB ──
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT key, value FROM settings WHERE key LIKE 'tax.%'")
+            .fetch_all(&state.db)
+            .await
+            .map_err(|e| e.to_string())?;
+    let settings: HashMap<String, String> = rows.into_iter().collect();
+
+    let tax_enabled = settings
+        .get("tax.is_enabled")
+        .map(|v| v == "1")
+        .unwrap_or(false);
+    let tax_rate = settings
+        .get("tax.rate")
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    let tax_included = settings
+        .get("tax.is_included")
+        .map(|v| v == "1")
+        .unwrap_or(false);
+
+    // ── 2. Hitung subtotal items (dengan diskon per-item) ──
+    let mut items_subtotal: f64 = 0.0;
+    for item in &payload.items {
+        let raw = item.price_at_time * item.quantity as f64;
+        let after_discount = raw - item.discount_amount;
+        items_subtotal += after_discount;
     }
 
-    let change_given = payload.amount_paid - payload.total_amount;
+    // ── 3. Kurangi diskon transaksi-level ──
+    let subtotal_after_discount = items_subtotal - payload.discount_amount;
+
+    // ── 4. Hitung pajak ──
+    let tax_amount = if tax_enabled && tax_rate > 0.0 {
+        if tax_included {
+            // Pajak sudah termasuk dalam harga: hitung porsi pajak saja (informasi struk)
+            subtotal_after_discount * tax_rate / (100.0 + tax_rate)
+        } else {
+            // Pajak ditambahkan di atas subtotal
+            subtotal_after_discount * (tax_rate / 100.0)
+        }
+    } else {
+        0.0
+    };
+
+    // ── 5. Hitung total ──
+    let total_amount = if tax_included {
+        subtotal_after_discount // pajak sudah di dalam harga
+    } else {
+        subtotal_after_discount + tax_amount
+    };
+
+    // Bulatkan ke 2 desimal
+    let total_amount = (total_amount * 100.0).round() / 100.0;
+    let tax_amount = (tax_amount * 100.0).round() / 100.0;
+
+    if payload.amount_paid < total_amount {
+        return Err(format!(
+            "Uang bayar tidak cukup. Total: {:.0}, Dibayar: {:.0}",
+            total_amount, payload.amount_paid
+        ));
+    }
+
+    let change_given = payload.amount_paid - total_amount;
     let transaction_id = uuid::Uuid::new_v4().to_string();
 
-    // Memulai database transaction
+    // ── 6. Mulai DB Transaction ──
     let mut tx = state.db.begin().await.map_err(|e| e.to_string())?;
 
-    // 1. Insert ke tabel transactions
     sqlx::query(
         "INSERT INTO transactions (
             id, cashier_id, total_amount, discount_id, discount_amount,
@@ -36,10 +95,10 @@ pub async fn create_transaction(
     )
     .bind(&transaction_id)
     .bind(session.user_id)
-    .bind(payload.total_amount)
+    .bind(total_amount)
     .bind(payload.discount_id)
     .bind(payload.discount_amount)
-    .bind(payload.tax_amount)
+    .bind(tax_amount)
     .bind(&payload.payment_method)
     .bind(payload.amount_paid)
     .bind(change_given)
@@ -48,9 +107,8 @@ pub async fn create_transaction(
     .await
     .map_err(|e| e.to_string())?;
 
-    // 2. Loop insert ke transaction_items & kurangi stok
-    for item in payload.items {
-        // Cek stok
+    // ── 7. Loop items ──
+    for item in &payload.items {
         let stock_row: (i64,) = sqlx::query_as("SELECT stock FROM products WHERE id = ?")
             .bind(item.product_id)
             .fetch_optional(&mut *tx)
@@ -65,22 +123,21 @@ pub async fn create_transaction(
             ));
         }
 
-        let subtotal = item.price_at_time * item.quantity as f64;
+        let subtotal = (item.price_at_time * item.quantity as f64) - item.discount_amount;
 
-        // Insert Item
         sqlx::query(
-            "INSERT INTO transaction_items (transaction_id, product_id, quantity, price_at_time, subtotal) VALUES (?, ?, ?, ?, ?)"
+            "INSERT INTO transaction_items (transaction_id, product_id, quantity, price_at_time, subtotal, discount_amount) VALUES (?, ?, ?, ?, ?, ?)"
         )
         .bind(&transaction_id)
         .bind(item.product_id)
         .bind(item.quantity)
         .bind(item.price_at_time)
         .bind(subtotal)
+        .bind(item.discount_amount)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
 
-        // Kurangi Stok
         sqlx::query("UPDATE products SET stock = stock - ? WHERE id = ?")
             .bind(item.quantity)
             .bind(item.product_id)
@@ -89,18 +146,15 @@ pub async fn create_transaction(
             .map_err(|e| e.to_string())?;
     }
 
-    // 3. Commit transaksi database
     tx.commit().await.map_err(|e| e.to_string())?;
 
-    // 4. Return Data Transaksi
-    let saved_transaction =
-        sqlx::query_as::<_, Transaction>("SELECT * FROM transactions WHERE id = ?")
-            .bind(&transaction_id)
-            .fetch_one(&state.db)
-            .await
-            .map_err(|e| e.to_string())?;
+    let saved = sqlx::query_as::<_, Transaction>("SELECT * FROM transactions WHERE id = ?")
+        .bind(&transaction_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    Ok(saved_transaction)
+    Ok(saved)
 }
 
 /// Batalkan/Void transaksi (Admin only)

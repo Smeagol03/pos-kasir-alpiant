@@ -3,6 +3,7 @@ use crate::models::product::{
     UpdateProductPayload,
 };
 use crate::AppState;
+use tauri::Manager;
 
 /// Ambil daftar kategori + jumlah produk
 #[tauri::command]
@@ -165,7 +166,7 @@ pub async fn create_product(
     }
 
     let result = sqlx::query(
-        "INSERT INTO products (name, sku, barcode, category_id, price, stock) VALUES (?, ?, ?, ?, ?, ?)"
+        "INSERT INTO products (name, sku, barcode, category_id, price, stock, image_path) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&payload.name)
     .bind(&payload.sku)
@@ -173,6 +174,7 @@ pub async fn create_product(
     .bind(payload.category_id)
     .bind(payload.price)
     .bind(payload.stock)
+    .bind(&payload.image_path)
     .execute(&state.db)
     .await;
 
@@ -212,7 +214,7 @@ pub async fn update_product(
     }
 
     let result = sqlx::query(
-        "UPDATE products SET name = ?, sku = ?, barcode = ?, category_id = ?, price = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        "UPDATE products SET name = ?, sku = ?, barcode = ?, category_id = ?, price = ?, is_active = ?, image_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
     )
     .bind(&payload.name)
     .bind(&payload.sku)
@@ -220,6 +222,7 @@ pub async fn update_product(
     .bind(payload.category_id)
     .bind(payload.price)
     .bind(payload.is_active)
+    .bind(&payload.image_path)
     .bind(id)
     .execute(&state.db)
     .await;
@@ -294,4 +297,137 @@ pub async fn delete_product(
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+/// Simpan gambar produk — copy file ke AppData/products/ (Admin only)
+#[tauri::command]
+pub async fn save_product_image(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    session_token: String,
+    product_id: i64,
+    file_path: String,
+) -> Result<String, String> {
+    crate::auth::guard::validate_admin(&state, &session_token)?;
+
+    let source = std::path::Path::new(&file_path);
+    if !source.exists() {
+        return Err("File tidak ditemukan".into());
+    }
+
+    let ext = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if !matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp") {
+        return Err("Format file harus PNG, JPG, atau WEBP".into());
+    }
+
+    let metadata = std::fs::metadata(source).map_err(|e| e.to_string())?;
+    if metadata.len() > 5 * 1024 * 1024 {
+        return Err("Ukuran file maksimal 5MB".into());
+    }
+
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
+    let img_dir = app_data_dir.join("products");
+    std::fs::create_dir_all(&img_dir).map_err(|e| e.to_string())?;
+
+    let dest_path = img_dir.join(format!("{}.{}", product_id, ext));
+    std::fs::copy(source, &dest_path).map_err(|e| e.to_string())?;
+
+    let dest_str = dest_path.to_string_lossy().to_string();
+
+    sqlx::query("UPDATE products SET image_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(&dest_str)
+        .bind(product_id)
+        .execute(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(dest_str)
+}
+
+/// Generate barcode unik untuk produk (Admin only)
+/// Format: KP-{timestamp_hex}-{random} — 13 karakter, compatible barcode scanner
+#[tauri::command]
+pub async fn generate_barcode(
+    state: tauri::State<'_, AppState>,
+    session_token: String,
+    product_id: i64,
+) -> Result<String, String> {
+    crate::auth::guard::validate_admin(&state, &session_token)?;
+
+    // Cek produk ada
+    let exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM products WHERE id = ?")
+        .bind(product_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if exists.is_none() {
+        return Err("Produk tidak ditemukan".into());
+    }
+
+    // Generate barcode: 13 digit numeric (EAN-13 compatible)
+    // Format: 200 (in-store prefix) + product_id (7 digits) + random (2 digits) + check digit
+    let mut barcode;
+    loop {
+        let base = format!("200{:07}{:02}", product_id % 10_000_000, rand_digits());
+        // Hitung check digit EAN-13
+        let check = ean13_check_digit(&base);
+        barcode = format!("{}{}", base, check);
+
+        // Pastikan unik
+        let dup: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM products WHERE barcode = ? AND id != ?")
+                .bind(&barcode)
+                .bind(product_id)
+                .fetch_optional(&state.db)
+                .await
+                .map_err(|e| e.to_string())?;
+
+        if dup.is_none() {
+            break;
+        }
+    }
+
+    sqlx::query("UPDATE products SET barcode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(&barcode)
+        .bind(product_id)
+        .execute(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(barcode)
+}
+
+/// Generate 2 digit acak (00-99)
+fn rand_digits() -> u32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    nanos % 100
+}
+
+/// Hitung check digit EAN-13 dari 12 digit pertama
+fn ean13_check_digit(digits: &str) -> u32 {
+    let sum: u32 = digits
+        .chars()
+        .enumerate()
+        .map(|(i, c)| {
+            let d = c.to_digit(10).unwrap_or(0);
+            if i % 2 == 0 {
+                d
+            } else {
+                d * 3
+            }
+        })
+        .sum();
+    (10 - (sum % 10)) % 10
 }

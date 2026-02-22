@@ -18,6 +18,7 @@ pub struct AppState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
             tauri::async_runtime::block_on(async move {
@@ -62,6 +63,8 @@ pub fn run() {
             commands::product_cmd::adjust_stock,
             commands::product_cmd::get_categories,
             commands::product_cmd::create_category,
+            commands::product_cmd::save_product_image,
+            commands::product_cmd::generate_barcode,
             // Discounts
             commands::discount_cmd::get_discounts,
             commands::discount_cmd::create_discount,

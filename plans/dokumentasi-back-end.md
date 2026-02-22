@@ -1,4 +1,4 @@
-# Dokumentasi Backend KasirPro v3.0
+# Dokumentasi Backend KasirPro v4.0
 
 > Dokumen ini ditujukan untuk agen AI selanjutnya yang akan mengerjakan bagian **Frontend (UI/UX)** menggunakan React + TypeScript + Tauri v2. Seluruh backend Rust sudah selesai 100% dan teruji kompilasinya (`cargo check` passed). Anda hanya perlu fokus pada integrasi menggunakan `invoke()`.
 
@@ -34,11 +34,11 @@ src-tauri/src/
     ├── mod.rs
     ├── auth_cmd.rs          # 5 commands (check_first_run, create_admin, login, logout, check_session)
     ├── user_cmd.rs          # 5 commands (get_all_users, create_user, update_user, toggle_user_status, reset_user_password)
-    ├── product_cmd.rs       # 8 commands (get_products, get_product_by_barcode, create_product, update_product, delete_product, adjust_stock, get_categories, create_category)
-    ├── discount_cmd.rs      # 4 commands (get_discounts, create_discount, update_discount, toggle_discount)
-    ├── transaction_cmd.rs   # 4 commands (create_transaction, void_transaction, get_transactions, get_transaction_detail)
-    ├── report_cmd.rs        # 4 commands (get_daily_report, get_sales_chart, get_top_products, get_shift_summary)
-    └── settings_cmd.rs      # 5 commands (get_settings, save_settings, save_logo, print_receipt, test_print)
+    ├── product_cmd.rs       # 10 commands (+save_product_image, +generate_barcode)
+    ├── discount_cmd.rs      # 4 commands
+    ├── transaction_cmd.rs   # 4 commands (create_transaction: auto tax + per-item discount)
+    ├── report_cmd.rs        # 4 commands
+    └── settings_cmd.rs      # 5 commands
 ```
 
 ### AppState
@@ -224,6 +224,7 @@ Berikut adalah detail field dari setiap struct yang dikembalikan oleh backend ke
   price: number;
   stock: number;
   barcode: string | null;
+  image_path: string | null; // path gambar di AppData
   is_active: boolean;
 }
 ```
@@ -239,6 +240,7 @@ Berikut adalah detail field dari setiap struct yang dikembalikan oleh backend ke
   price: number;
   stock: number;
   barcode: string | null;
+  image_path: string | null;
   is_active: boolean;
   created_at: string | null;
   updated_at: string | null;
@@ -318,6 +320,7 @@ Sama seperti `Transaction` ditambah:
   quantity: number;
   price_at_time: number;
   subtotal: number;
+  discount_amount: number; // diskon per item (0 jika tidak ada)
 }
 ```
 
@@ -420,7 +423,7 @@ Sama seperti `Transaction` ditambah:
 
 ---
 
-## 5. Daftar Lengkap Endpoint (35 Tauri Commands)
+## 5. Daftar Lengkap Endpoint (37 Tauri Commands)
 
 ### A. Auth Commands (5)
 
@@ -444,20 +447,26 @@ Sama seperti `Transaction` ditambah:
 
 > **Catatan:** `create_user` selalu membuat role KASIR. Admin tidak bisa membuat admin kedua dari UI. Admin tidak bisa menonaktifkan diri sendiri.
 
-### C. Inventori & Produk (8)
+### C. Inventori & Produk (10)
 
-| Command                  | Parameter                                                                                  | Auth      | Return                           |
-| ------------------------ | ------------------------------------------------------------------------------------------ | --------- | -------------------------------- |
-| `get_categories`         | `session_token`                                                                            | Semua     | `CategoryWithCount[]`            |
-| `create_category`        | `session_token`, `name`                                                                    | **ADMIN** | `Category`                       |
-| `get_products`           | `session_token`, `search?`, `category_id?`, `show_inactive?`                               | Semua     | `ProductWithCategory[]`          |
-| `get_product_by_barcode` | `session_token`, `barcode`                                                                 | Semua     | `ProductWithCategory`            |
-| `create_product`         | `session_token`, `payload: { name, sku?, barcode?, category_id?, price, stock }`           | **ADMIN** | `Product`                        |
-| `update_product`         | `session_token`, `id`, `payload: { name, sku?, barcode?, category_id?, price, is_active }` | **ADMIN** | `Product`                        |
-| `adjust_stock`           | `session_token`, `product_id`, `delta`                                                     | **ADMIN** | `number` (new stock)             |
-| `delete_product`         | `session_token`, `product_id`                                                              | **ADMIN** | `()` (soft delete → is_active=0) |
+| Command                  | Parameter                                                                                               | Auth      | Return                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------- | --------- | ------------------------- |
+| `get_categories`         | `session_token`                                                                                         | Semua     | `CategoryWithCount[]`     |
+| `create_category`        | `session_token`, `name`                                                                                 | **ADMIN** | `Category`                |
+| `get_products`           | `session_token`, `search?`, `category_id?`, `show_inactive?`                                            | Semua     | `ProductWithCategory[]`   |
+| `get_product_by_barcode` | `session_token`, `barcode`                                                                              | Semua     | `ProductWithCategory`     |
+| `create_product`         | `session_token`, `payload: { name, sku?, barcode?, category_id?, price, stock, image_path? }`           | **ADMIN** | `Product`                 |
+| `update_product`         | `session_token`, `id`, `payload: { name, sku?, barcode?, category_id?, price, is_active, image_path? }` | **ADMIN** | `Product`                 |
+| `adjust_stock`           | `session_token`, `product_id`, `delta`                                                                  | **ADMIN** | `number` (new stock)      |
+| `delete_product`         | `session_token`, `product_id`                                                                           | **ADMIN** | `()` (soft delete)        |
+| `save_product_image`     | `session_token`, `product_id`, `file_path`                                                              | **ADMIN** | `string` (saved path)     |
+| `generate_barcode`       | `session_token`, `product_id`                                                                           | **ADMIN** | `string` (EAN-13 barcode) |
 
-> **Catatan:** Kasir hanya melihat produk aktif. Admin bisa melihat semua (jika `show_inactive` dikirim).
+> **Catatan `save_product_image`:** Validasi PNG/JPG/WEBP, max 5MB. File disimpan di AppData/products/{id}.{ext}.
+>
+> **Catatan `generate_barcode`:** Auto-generate EAN-13 valid (13 digit numeric) dengan prefix "200" (in-store). Bisa di-scan oleh barcode scanner standar.
+>
+> **Catatan:** Kasir hanya melihat produk aktif. Admin bisa melihat semua.
 
 ### D. Diskon (4)
 
@@ -479,26 +488,37 @@ Sama seperti `Transaction` ditambah:
 | `get_transactions`       | `session_token`, `date?` (YYYY-MM-DD), `page` | Semua\*   | `PaginatedTransactions` |
 | `get_transaction_detail` | `session_token`, `transaction_id`             | Semua     | `TransactionDetail`     |
 
-**CreateTransactionPayload:**
+**CreateTransactionPayload (UPDATED v4.0 — Breaking Change):**
 
 ```typescript
 {
-  items: Array<{ product_id: number; quantity: number; price_at_time: number }>
-  total_amount: number
-  discount_id: number | null
-  discount_amount: number
-  tax_amount: number
+  items: Array<{
+    product_id: number;
+    quantity: number;
+    price_at_time: number;
+    discount_amount: number;  // diskon per item (0 jika tidak ada)
+  }>
+  discount_id: number | null     // diskon transaksi-level
+  discount_amount: number         // nilai diskon transaksi-level
   payment_method: "CASH" | "DEBIT" | "QRIS"
   amount_paid: number
   notes?: string
 }
 ```
 
-> **Catatan `get_transactions`:** Kasir hanya melihat transaksinya sendiri (sejak login). Admin melihat semua.
+> ⚠️ **BREAKING CHANGE:** `total_amount` dan `tax_amount` **TIDAK lagi dikirim** dari frontend. Backend menghitung keduanya otomatis.
+>
+> **Alur kalkulasi backend:**
+>
+> 1. Hitung subtotal setiap item: `(price_at_time × quantity) - discount_amount`
+> 2. Kurangi diskon transaksi-level
+> 3. Baca `tax.*` settings → hitung pajak otomatis
+> 4. Jika `tax.is_included = false` → total = subtotal + pajak
+> 5. Jika `tax.is_included = true` → total = subtotal (pajak sudah di dalam harga)
+>
+> **Catatan `get_transactions`:** Kasir hanya melihat transaksinya sendiri. Admin melihat semua.
 >
 > **Catatan `void_transaction`:** Otomatis mengembalikan stok produk.
->
-> **Catatan `create_transaction`:** Backend melakukan validasi stok, re-kalkulasi subtotal, dan menggunakan SQL Transaction (BEGIN/COMMIT) untuk atomicity.
 
 ### F. Laporan (4)
 
@@ -665,6 +685,28 @@ badge, button, card, checkbox, dialog, dropdown-menu, form, input, label, popove
 
 ---
 
-> **Total: 35 Tauri commands** terdaftar dan terimplementasi.
+> **Total: 37 Tauri commands** terdaftar dan terimplementasi.
 > **Status kompilasi: ✅ `cargo check` passed tanpa error.**
-> **Tanggal dokumentasi: 22 Februari 2026**
+> **Tanggal dokumentasi: 22 Februari 2026 (v4.0)**
+
+## 10. Catatan Penting untuk Frontend
+
+### Input Pembayaran
+
+Input jumlah uang bayar HARUS mendukung **keyboard (angka)** DAN **numpad on-screen**. Jangan hanya mengandalkan komponen NumpadInput — pastikan user juga bisa mengetik langsung dari keyboard fisik.
+
+### Diskon Per-Item
+
+Pada `PaymentModal` atau `CartPanel`, beri opsi untuk menerapkan diskon di **level item individual** (field `discount_amount` per item) maupun di **level transaksi keseluruhan** (field `discount_amount` di payload utama).
+
+### Pajak Otomatis
+
+Frontend **tidak perlu** menghitung pajak. Cukup kirim items + diskon + metode bayar + jumlah bayar. Backend akan menghitung pajak dari settings dan mengembalikan `total_amount` & `tax_amount` di response `Transaction`.
+
+### Barcode Produk
+
+Saat admin menambah produk baru, tampilkan tombol **"Generate Barcode"** yang memanggil `generate_barcode`. Barcode yang dihasilkan berformat EAN-13 (13 digit) dan compatible dengan barcode scanner fisik standar.
+
+### Gambar Produk
+
+Saat admin menambah/edit produk, tampilkan opsi upload gambar. Panggil `save_product_image` setelah produk dibuat/diupdate. Gambar akan di-copy ke AppData dan path-nya disimpan di `image_path`. Untuk menampilkan gambar, gunakan `convertFileSrc()` dari `@tauri-apps/api/core`.

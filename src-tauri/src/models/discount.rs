@@ -7,6 +7,7 @@ pub struct Discount {
     pub r#type: String, // "NOMINAL" | "PERCENT"
     pub value: f64,
     pub min_purchase: f64,
+    pub is_automatic: bool,
     pub is_active: bool,
     pub created_at: Option<String>,
 }
@@ -17,6 +18,7 @@ pub struct CreateDiscountPayload {
     pub r#type: String,
     pub value: f64,
     pub min_purchase: f64,
+    pub is_automatic: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -25,5 +27,6 @@ pub struct UpdateDiscountPayload {
     pub r#type: String,
     pub value: f64,
     pub min_purchase: f64,
+    pub is_automatic: bool,
     pub is_active: bool,
 }

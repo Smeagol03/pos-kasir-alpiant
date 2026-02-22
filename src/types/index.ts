@@ -73,6 +73,7 @@ export interface Discount {
     type: DiscountType;
     value: number;
     min_purchase: number;
+    is_automatic: boolean;
     is_active: boolean;
     created_at: string | null;
 }
@@ -188,11 +189,10 @@ export interface CreateTransactionPayload {
         product_id: number;
         quantity: number;
         price_at_time: number;
+        discount_amount: number;
     }>;
-    total_amount: number;
     discount_id: number | null;
     discount_amount: number;
-    tax_amount: number;
     payment_method: PaymentMethod;
     amount_paid: number;
     notes?: string;
