@@ -35,7 +35,7 @@ pub struct Category {
 }
 
 /// Category dengan jumlah produk.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct CategoryWithCount {
     pub id: i64,
     pub name: String,

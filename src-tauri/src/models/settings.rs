@@ -60,7 +60,7 @@ pub struct DailyReport {
 }
 
 /// Data chart penjualan per hari.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ChartPoint {
     pub date: String,
     pub revenue: f64,
@@ -68,7 +68,7 @@ pub struct ChartPoint {
 }
 
 /// Statistik produk terlaris.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ProductStat {
     pub product_id: i64,
     pub name: String,
