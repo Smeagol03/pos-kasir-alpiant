@@ -166,13 +166,14 @@ pub async fn create_product(
     }
 
     let result = sqlx::query(
-        "INSERT INTO products (name, sku, barcode, category_id, price, stock, image_path) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO products (name, sku, barcode, category_id, price, cost_price, stock, image_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&payload.name)
     .bind(&payload.sku)
     .bind(&payload.barcode)
     .bind(payload.category_id)
     .bind(payload.price)
+    .bind(payload.cost_price)
     .bind(payload.stock)
     .bind(&payload.image_path)
     .execute(&state.db)
@@ -182,6 +183,35 @@ pub async fn create_product(
         Ok(res) => {
             let id = res.last_insert_rowid();
             
+            // Auto-generate barcode jika tidak diisi user
+            if payload.barcode.as_ref().map_or(true, |b| b.trim().is_empty()) {
+                let mut barcode;
+                loop {
+                    let base = format!("200{:07}{:02}", id % 10_000_000, rand_digits());
+                    let check = ean13_check_digit(&base);
+                    barcode = format!("{}{}", base, check);
+
+                    let dup: Option<(i64,)> =
+                        sqlx::query_as("SELECT id FROM products WHERE barcode = ? AND id != ?")
+                            .bind(&barcode)
+                            .bind(id)
+                            .fetch_optional(&state.db)
+                            .await
+                            .map_err(|e| e.to_string())?;
+
+                    if dup.is_none() {
+                        break;
+                    }
+                }
+
+                sqlx::query("UPDATE products SET barcode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+                    .bind(&barcode)
+                    .bind(id)
+                    .execute(&state.db)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+
             // Log Stock Adjustment (Initial)
             if payload.stock > 0 {
                 let session = crate::auth::guard::validate_admin(&state, &session_token)?;
@@ -241,13 +271,14 @@ pub async fn update_product(
     }
 
     let result = sqlx::query(
-        "UPDATE products SET name = ?, sku = ?, barcode = ?, category_id = ?, price = ?, is_active = ?, image_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        "UPDATE products SET name = ?, sku = ?, barcode = ?, category_id = ?, price = ?, cost_price = ?, is_active = ?, image_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
     )
     .bind(&payload.name)
     .bind(&payload.sku)
     .bind(&payload.barcode)
     .bind(payload.category_id)
     .bind(payload.price)
+    .bind(payload.cost_price)
     .bind(payload.is_active)
     .bind(&payload.image_path)
     .bind(id)
@@ -501,4 +532,133 @@ fn ean13_check_digit(digits: &str) -> u32 {
         })
         .sum();
     (10 - (sum % 10)) % 10
+}
+
+/// Ambil produk dengan stok kritis (di bawah threshold)
+#[tauri::command]
+pub async fn get_low_stock_products(
+    state: tauri::State<'_, AppState>,
+    session_token: String,
+) -> Result<Vec<ProductWithCategory>, String> {
+    crate::auth::guard::validate_session(&state, &session_token)?;
+
+    // Baca threshold dari settings
+    let threshold: (String,) = sqlx::query_as(
+        "SELECT value FROM settings WHERE key = 'app.low_stock_threshold'"
+    )
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| e.to_string())?
+    .unwrap_or(("5".to_string(),));
+
+    let threshold_val: i64 = threshold.0.parse().unwrap_or(5);
+
+    let query = "
+        SELECT p.*, c.name as category_name
+        FROM products p
+        LEFT JOIN categories c ON p.category_id = c.id
+        WHERE p.stock <= ? AND p.is_active = 1
+        ORDER BY p.stock ASC
+    ";
+
+    let products = sqlx::query_as::<_, ProductWithCategory>(query)
+        .bind(threshold_val)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(products)
+}
+
+/// Bulk import produk (Admin only)
+#[tauri::command]
+pub async fn bulk_import_products(
+    state: tauri::State<'_, AppState>,
+    session_token: String,
+    products: Vec<CreateProductPayload>,
+) -> Result<BulkImportResult, String> {
+    crate::auth::guard::validate_admin(&state, &session_token)?;
+
+    let mut success_count = 0i64;
+    let mut errors: Vec<String> = Vec::new();
+
+    let mut tx = state.db.begin().await.map_err(|e| e.to_string())?;
+
+    for (i, p) in products.iter().enumerate() {
+        let row_num = i + 1;
+
+        if p.name.trim().is_empty() {
+            errors.push(format!("Baris {}: Nama produk kosong", row_num));
+            continue;
+        }
+        if p.price < 0.0 {
+            errors.push(format!("Baris {}: Harga tidak valid", row_num));
+            continue;
+        }
+
+        let result = sqlx::query(
+            "INSERT INTO products (name, sku, barcode, category_id, price, cost_price, stock, image_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&p.name)
+        .bind(&p.sku)
+        .bind(&p.barcode)
+        .bind(p.category_id)
+        .bind(p.price)
+        .bind(p.cost_price)
+        .bind(p.stock)
+        .bind(&p.image_path)
+        .execute(&mut *tx)
+        .await;
+
+        match result {
+            Ok(res) => {
+                let id = res.last_insert_rowid();
+                // Auto-generate barcode jika tidak diisi
+                if p.barcode.as_ref().map_or(true, |b| b.trim().is_empty()) {
+                    let base = format!("200{:07}{:02}", id % 10_000_000, rand_digits());
+                    let check = ean13_check_digit(&base);
+                    let barcode = format!("{}{}", base, check);
+                    let _ = sqlx::query("UPDATE products SET barcode = ? WHERE id = ?")
+                        .bind(&barcode)
+                        .bind(id)
+                        .execute(&mut *tx)
+                        .await;
+                }
+                success_count += 1;
+            }
+            Err(sqlx::Error::Database(err)) if err.is_unique_violation() => {
+                errors.push(format!("Baris {}: SKU/Barcode duplikat ({})", row_num, p.name));
+            }
+            Err(e) => {
+                errors.push(format!("Baris {}: {}", row_num, e));
+            }
+        }
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Log Activity
+    let session = crate::auth::guard::validate_admin(&state, &session_token)?;
+    crate::commands::activity_cmd::log_activity(
+        &state.db,
+        None,
+        Some(session.user_id),
+        "BULK_IMPORT",
+        &format!("Bulk import: {} berhasil, {} gagal", success_count, errors.len()),
+        None,
+    ).await;
+
+    Ok(BulkImportResult {
+        success_count,
+        error_count: errors.len() as i64,
+        errors,
+    })
+}
+
+/// Hasil bulk import.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BulkImportResult {
+    pub success_count: i64,
+    pub error_count: i64,
+    pub errors: Vec<String>,
 }

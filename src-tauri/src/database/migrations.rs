@@ -208,6 +208,9 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     // Gambar produk
     safe_add_column(pool, "products", "image_path", "TEXT DEFAULT ''").await;
 
+    // Harga Pokok Penjualan (HPP)
+    safe_add_column(pool, "products", "cost_price", "REAL NOT NULL DEFAULT 0").await;
+
     // Diskon otomatis
     safe_add_column(
         pool,

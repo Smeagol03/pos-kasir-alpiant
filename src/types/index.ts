@@ -38,6 +38,7 @@ export interface ProductWithCategory {
     sku: string | null;
     name: string;
     price: number;
+    cost_price: number;
     stock: number;
     barcode: string | null;
     is_active: boolean;
@@ -49,6 +50,7 @@ export interface Product {
     sku: string | null;
     name: string;
     price: number;
+    cost_price: number;
     stock: number;
     barcode: string | null;
     is_active: boolean;
@@ -234,4 +236,16 @@ export interface CreateTransactionPayload {
     payment_method: PaymentMethod;
     amount_paid: number;
     notes?: string;
+}
+
+export interface ProfitReport {
+    total_cost: number;
+    gross_profit: number;
+    profit_margin: number;
+}
+
+export interface BulkImportResult {
+    success_count: number;
+    error_count: number;
+    errors: string[];
 }

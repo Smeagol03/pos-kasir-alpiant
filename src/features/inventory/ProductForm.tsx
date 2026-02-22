@@ -42,6 +42,7 @@ export function ProductForm({
     barcode: "",
     category_id: "none",
     price: 0,
+    cost_price: 0,
     stock: 0,
     is_active: true,
   });
@@ -65,6 +66,7 @@ export function ProductForm({
         barcode: product.barcode || "",
         category_id: product.category_id?.toString() || "none",
         price: product.price,
+        cost_price: product.cost_price || 0,
         stock: product.stock,
         is_active: product.is_active,
       });
@@ -75,6 +77,7 @@ export function ProductForm({
         barcode: "",
         category_id: "none",
         price: 0,
+        cost_price: 0,
         stock: 0,
         is_active: true,
       });
@@ -191,7 +194,8 @@ export function ProductForm({
       category_id:
         formData.category_id === "none" ? null : Number(formData.category_id),
       price: formData.price,
-      stock: product ? product.stock : formData.stock, // Stock only on create via payload
+      cost_price: formData.cost_price,
+      stock: product ? product.stock : formData.stock,
       is_active: formData.is_active,
     };
 
@@ -318,7 +322,7 @@ export function ProductForm({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Price *</Label>
+              <Label>Harga Jual *</Label>
               <NumericInput
                 required
                 value={formData.price}
@@ -328,16 +332,29 @@ export function ProductForm({
             </div>
           </div>
 
-          {!product && (
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Initial Stock *</Label>
+              <Label>Harga Modal (HPP)</Label>
               <NumericInput
-                required
-                value={formData.stock}
-                onChange={(val) => setFormData({ ...formData, stock: val })}
+                value={formData.cost_price}
+                onChange={(val) =>
+                  setFormData({ ...formData, cost_price: val })
+                }
+                prefix="Rp"
               />
             </div>
-          )}
+
+            {!product && (
+              <div className="space-y-2">
+                <Label>Stok Awal *</Label>
+                <NumericInput
+                  required
+                  value={formData.stock}
+                  onChange={(val) => setFormData({ ...formData, stock: val })}
+                />
+              </div>
+            )}
+          </div>
 
           {product && (
             <div className="flex items-center space-x-2 pt-2">

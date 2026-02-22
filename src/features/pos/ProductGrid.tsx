@@ -9,7 +9,6 @@ import { Card, CardContent } from "../../components/ui/card";
 import { Search, ShoppingCart, Info } from "lucide-react";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { formatRupiah } from "../../lib/currency";
-import { Badge } from "../../components/ui/badge";
 
 export function ProductGrid() {
   const sessionToken = useAuthStore((s) => s.sessionToken);

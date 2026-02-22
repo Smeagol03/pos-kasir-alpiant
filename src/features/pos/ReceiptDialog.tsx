@@ -2,16 +2,13 @@ import { useEffect, useState, useRef } from "react";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
 } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/button";
 import { formatRupiah } from "../../lib/currency";
 import { Transaction, TransactionDetail, AppSettings } from "../../types";
 import { invoke } from "../../lib/tauri";
 import { useAuthStore } from "../../store/authStore";
-import { Printer, X, Receipt, CheckCircle2 } from "lucide-react";
+import { Printer, X, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 
 export function ReceiptDialog({
@@ -26,12 +23,10 @@ export function ReceiptDialog({
   const sessionToken = useAuthStore((s) => s.sessionToken);
   const [detail, setDetail] = useState<TransactionDetail | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [loading, setLoading] = useState(false);
   const receiptRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open && transaction) {
-      setLoading(true);
       Promise.all([
         invoke<TransactionDetail>("get_transaction_detail", {
           sessionToken,
@@ -43,8 +38,7 @@ export function ReceiptDialog({
           setDetail(txDetail);
           setSettings(appSettings);
         })
-        .catch(console.error)
-        .finally(() => setLoading(false));
+        .catch(console.error);
     }
   }, [open, transaction, sessionToken]);
 

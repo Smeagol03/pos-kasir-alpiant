@@ -239,7 +239,84 @@ pub async fn save_logo(
     Ok(dest_str)
 }
 
-/// Cetak struk - mock untuk sekarang, bisa di integrasikan escpos-rs nanti
+/// Scan port printer yang tersedia di sistem
+#[tauri::command]
+pub async fn list_serial_ports(
+    state: tauri::State<'_, AppState>,
+    session_token: String,
+) -> Result<Vec<PrinterPort>, String> {
+    crate::auth::guard::validate_admin(&state, &session_token)?;
+
+    let mut ports: Vec<PrinterPort> = Vec::new();
+
+    // Linux: cek /dev/usb/lp*, /dev/ttyUSB*, /dev/ttyACM*
+    #[cfg(target_os = "linux")]
+    {
+        let patterns = [
+            ("/dev/usb/lp", "USB Printer"),
+            ("/dev/ttyUSB", "Serial USB"),
+            ("/dev/ttyACM", "ACM Serial"),
+        ];
+        for (prefix, desc) in patterns {
+            for i in 0..10 {
+                let path = format!("{}{}", prefix, i);
+                if std::path::Path::new(&path).exists() {
+                    ports.push(PrinterPort {
+                        path: path.clone(),
+                        description: format!("{} ({})", desc, path),
+                    });
+                }
+            }
+        }
+    }
+
+    // macOS
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(entries) = std::fs::read_dir("/dev") {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("cu.usb") || name.starts_with("tty.usb") {
+                    let path = format!("/dev/{}", name);
+                    ports.push(PrinterPort {
+                        path: path.clone(),
+                        description: format!("USB Serial ({})", path),
+                    });
+                }
+            }
+        }
+    }
+
+    // Windows
+    #[cfg(target_os = "windows")]
+    {
+        for i in 1..20 {
+            let path = format!("COM{}", i);
+            ports.push(PrinterPort {
+                path: path.clone(),
+                description: format!("Serial Port ({})", path),
+            });
+        }
+        // USB printer
+        for i in 0..5 {
+            let path = format!("\\\\.\\USB{}", i);
+            ports.push(PrinterPort {
+                path: path.clone(),
+                description: format!("USB Printer ({})", path),
+            });
+        }
+    }
+
+    // Selalu tambahkan opsi network/IP
+    ports.push(PrinterPort {
+        path: "network".to_string(),
+        description: "Network Printer (TCP/IP — masukkan IP:PORT)".to_string(),
+    });
+
+    Ok(ports)
+}
+
+/// Cetak struk ke printer ESC/POS
 #[tauri::command]
 pub async fn print_receipt(
     state: tauri::State<'_, AppState>,
@@ -247,19 +324,212 @@ pub async fn print_receipt(
     transaction_id: String,
 ) -> Result<(), String> {
     crate::auth::guard::validate_session(&state, &session_token)?;
-    // TODO: Integrasi printer nyata
-    println!("Printing receipt for transaction: {}", transaction_id);
+
+    // Ambil printer port dari settings
+    let port = get_printer_port(&state).await?;
+    if port.is_empty() {
+        return Err("Printer belum dikonfigurasi. Silakan atur di Settings → Hardware.".into());
+    }
+
+    // Ambil data transaksi
+    let tx: Option<(String, f64, f64, f64, String, String)> = sqlx::query_as(
+        "SELECT id, total_amount, discount_amount, tax_amount, payment_method, timestamp FROM transactions WHERE id = ?"
+    )
+    .bind(&transaction_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let tx = tx.ok_or("Transaksi tidak ditemukan")?;
+
+    // Ambil item transaksi
+    let items: Vec<(String, i64, f64, f64)> = sqlx::query_as(
+        "SELECT p.name, ti.quantity, ti.price_at_time, ti.subtotal FROM transaction_items ti JOIN products p ON ti.product_id = p.id WHERE ti.transaction_id = ?"
+    )
+    .bind(&transaction_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Ambil settings toko
+    let store_name = get_setting(&state, "company.store_name").await.unwrap_or("TOKO".to_string());
+    let address = get_setting(&state, "company.address").await.unwrap_or_default();
+    let footer = get_setting(&state, "receipt.footer_text").await.unwrap_or("Terima Kasih!".to_string());
+
+    // Build ESC/POS receipt
+    let mut esc: Vec<u8> = Vec::new();
+
+    // Init printer
+    esc.extend_from_slice(b"\x1B\x40"); // ESC @ — Initialize
+
+    // Center align
+    esc.extend_from_slice(b"\x1B\x61\x01"); // ESC a 1 — Center
+
+    // Bold + Double height for store name
+    esc.extend_from_slice(b"\x1B\x45\x01"); // ESC E 1 — Bold ON
+    esc.extend_from_slice(b"\x1D\x21\x11"); // GS ! 0x11 — Double width+height
+    esc.extend_from_slice(store_name.as_bytes());
+    esc.push(b'\n');
+
+    // Reset size
+    esc.extend_from_slice(b"\x1D\x21\x00"); // GS ! 0 — Normal size
+    esc.extend_from_slice(b"\x1B\x45\x00"); // ESC E 0 — Bold OFF
+
+    if !address.is_empty() {
+        esc.extend_from_slice(address.as_bytes());
+        esc.push(b'\n');
+    }
+
+    // Separator
+    esc.extend_from_slice(b"================================\n");
+
+    // Left align for items
+    esc.extend_from_slice(b"\x1B\x61\x00"); // ESC a 0 — Left
+
+    // Transaction info
+    esc.extend_from_slice(format!("No: {}\n", &tx.0[..8.min(tx.0.len())]).as_bytes());
+    esc.extend_from_slice(format!("Tgl: {}\n", tx.5).as_bytes());
+    esc.extend_from_slice(b"--------------------------------\n");
+
+    // Items
+    for (name, qty, price, subtotal) in &items {
+        let short_name: String = name.chars().take(20).collect();
+        esc.extend_from_slice(format!("{} x{}\n", short_name, qty).as_bytes());
+        esc.extend_from_slice(format!("  @{:>10} = {:>10}\n",
+            format_number(*price as i64),
+            format_number(*subtotal as i64),
+        ).as_bytes());
+    }
+
+    esc.extend_from_slice(b"--------------------------------\n");
+
+    // Totals
+    if tx.2 > 0.0 {
+        esc.extend_from_slice(format!("Diskon:     {:>10}\n", format_number(tx.2 as i64)).as_bytes());
+    }
+    if tx.3 > 0.0 {
+        esc.extend_from_slice(format!("Pajak:      {:>10}\n", format_number(tx.3 as i64)).as_bytes());
+    }
+    esc.extend_from_slice(b"\x1B\x45\x01"); // Bold
+    esc.extend_from_slice(format!("TOTAL:      {:>10}\n", format_number(tx.1 as i64)).as_bytes());
+    esc.extend_from_slice(b"\x1B\x45\x00"); // Bold off
+    esc.extend_from_slice(format!("Bayar ({:>4}): {:>10}\n", tx.4, format_number(tx.1 as i64)).as_bytes());
+
+    esc.extend_from_slice(b"================================\n");
+
+    // Footer (center)
+    esc.extend_from_slice(b"\x1B\x61\x01"); // Center
+    esc.extend_from_slice(footer.as_bytes());
+    esc.push(b'\n');
+    esc.push(b'\n');
+
+    // Cut paper
+    esc.extend_from_slice(b"\x1D\x56\x41\x03"); // GS V A 3 — Partial cut + 3 lines feed
+
+    // Kirim ke printer
+    send_to_printer(&port, &esc).await?;
+
     Ok(())
 }
 
-/// Test printer koneksi - mock
+/// Test printer koneksi
 #[tauri::command]
 pub async fn test_print(
     state: tauri::State<'_, AppState>,
     session_token: String,
 ) -> Result<(), String> {
     crate::auth::guard::validate_admin(&state, &session_token)?;
-    // TODO: Integrasi test print nyata
-    println!("Test printing...");
+
+    let port = get_printer_port(&state).await?;
+    if port.is_empty() {
+        return Err("Printer belum dikonfigurasi. Silakan atur di Settings → Hardware.".into());
+    }
+
+    // Build test receipt
+    let mut esc: Vec<u8> = Vec::new();
+    esc.extend_from_slice(b"\x1B\x40"); // Init
+    esc.extend_from_slice(b"\x1B\x61\x01"); // Center
+    esc.extend_from_slice(b"\x1B\x45\x01"); // Bold
+    esc.extend_from_slice(b"\x1D\x21\x11"); // Double
+    esc.extend_from_slice(b"TEST PRINT\n");
+    esc.extend_from_slice(b"\x1D\x21\x00"); // Reset size
+    esc.extend_from_slice(b"\x1B\x45\x00"); // No bold
+    esc.extend_from_slice(b"================================\n");
+    esc.extend_from_slice(b"Printer berhasil terhubung!\n");
+    esc.extend_from_slice(b"POS Kasir Alpiant\n");
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    esc.extend_from_slice(format!("{}\n", now).as_bytes());
+    esc.extend_from_slice(b"================================\n\n\n");
+    esc.extend_from_slice(b"\x1D\x56\x41\x03"); // Cut
+
+    send_to_printer(&port, &esc).await?;
+
     Ok(())
+}
+
+// ──────── Helper Functions ────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PrinterPort {
+    pub path: String,
+    pub description: String,
+}
+
+async fn get_printer_port(state: &tauri::State<'_, AppState>) -> Result<String, String> {
+    let result: Option<(String,)> = sqlx::query_as(
+        "SELECT value FROM settings WHERE key = 'app.printer_port'"
+    )
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(result.map(|r| r.0).unwrap_or_default())
+}
+
+async fn get_setting(state: &tauri::State<'_, AppState>, key: &str) -> Option<String> {
+    let result: Option<(String,)> = sqlx::query_as(
+        "SELECT value FROM settings WHERE key = ?"
+    )
+    .bind(key)
+    .fetch_optional(&state.db)
+    .await
+    .ok()?;
+    result.map(|r| r.0)
+}
+
+fn format_number(n: i64) -> String {
+    let s = n.abs().to_string();
+    let mut result = String::new();
+    for (i, c) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push('.');
+        }
+        result.push(c);
+    }
+    if n < 0 { result.push('-'); }
+    result.chars().rev().collect()
+}
+
+async fn send_to_printer(port: &str, data: &[u8]) -> Result<(), String> {
+    if port.starts_with("network:") || port.contains(':') {
+        // Network printer (IP:PORT)
+        let addr = port.trim_start_matches("network:").trim();
+        let stream = tokio::net::TcpStream::connect(addr)
+            .await
+            .map_err(|e| format!("Gagal koneksi ke printer network {}: {}", addr, e))?;
+        use tokio::io::AsyncWriteExt;
+        let mut stream = stream;
+        stream.write_all(data)
+            .await
+            .map_err(|e| format!("Gagal kirim data ke printer: {}", e))?;
+        stream.flush()
+            .await
+            .map_err(|e| format!("Gagal flush data: {}", e))?;
+        Ok(())
+    } else {
+        // USB/Serial — write langsung ke device file
+        tokio::fs::write(port, data)
+            .await
+            .map_err(|e| format!("Gagal kirim ke printer {}: {}. Pastikan printer menyala dan port benar.", port, e))?;
+        Ok(())
+    }
 }

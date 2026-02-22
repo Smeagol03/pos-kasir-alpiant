@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
-import { useInvokeQuery } from "../hooks/useInvokeQuery";
+import { useInvokeQuery, useInvokeMutation } from "../hooks/useInvokeQuery";
 import { ProductWithCategory } from "../types";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../store/authStore";
 import { DataTable, Column } from "../components/DataTable";
 import { CurrencyDisplay } from "../components/CurrencyDisplay";
@@ -13,21 +14,46 @@ import {
   CardContent,
 } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
-import { Plus, Settings2, Pencil, PackagePlus } from "lucide-react";
+import {
+  Plus,
+  Settings2,
+  Pencil,
+  PackagePlus,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { useToast } from "../hooks/use-toast";
 import { ProductForm } from "../features/inventory/ProductForm";
 import { CategoryManager } from "../features/inventory/CategoryManager";
 import { StockAdjust } from "../features/inventory/StockAdjust";
+import { BulkImportDialog } from "../features/inventory/BulkImportDialog";
 
 export default function InventoryPage() {
   const sessionToken = useAuthStore((s) => s.sessionToken);
+  const user = useAuthStore((s) => s.user);
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [catManagerOpen, setCatManagerOpen] = useState(false);
   const [stockAdjustOpen, setStockAdjustOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editingProduct, setEditingProduct] =
     useState<ProductWithCategory | null>(null);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const deleteMutation = useInvokeMutation<void, any>("delete_product", {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast({
+        title: "Berhasil",
+        description: "Produk telah dihapus (nonaktifkan)",
+      });
+    },
+    onError: (e) =>
+      toast({ variant: "destructive", title: "Error", description: String(e) }),
+  });
 
   const { data: products, isLoading } = useInvokeQuery<ProductWithCategory[]>(
     ["products", search, showInactive],
@@ -105,10 +131,32 @@ export default function InventoryPage() {
       {
         header: "Actions",
         cell: (p) => (
-          <Button variant="ghost" size="sm" onClick={() => handleEdit(p)}>
-            <Pencil className="h-4 w-4 mr-2" />
-            Edit
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={() => handleEdit(p)}>
+              <Pencil className="h-4 w-4 mr-1" />
+              Edit
+            </Button>
+            {user?.role === "ADMIN" && p.is_active && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Yakin ingin menghapus "${p.name}"? Produk akan dinonaktifkan.`,
+                    )
+                  ) {
+                    deleteMutation.mutate({ sessionToken, productId: p.id });
+                  }
+                }}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Hapus
+              </Button>
+            )}
+          </div>
         ),
       },
     ],
@@ -125,6 +173,10 @@ export default function InventoryPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            Import CSV
+          </Button>
           <Button variant="outline" onClick={() => setCatManagerOpen(true)}>
             <Settings2 className="mr-2 h-4 w-4" />
             Categories
@@ -188,6 +240,8 @@ export default function InventoryPage() {
         onOpenChange={setStockAdjustOpen}
         product={editingProduct}
       />
+
+      <BulkImportDialog open={importOpen} onOpenChange={setImportOpen} />
     </div>
   );
 }

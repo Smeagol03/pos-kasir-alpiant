@@ -7,6 +7,7 @@ pub struct Product {
     pub sku: Option<String>,
     pub name: String,
     pub price: f64,
+    pub cost_price: f64,
     pub stock: i64,
     pub barcode: Option<String>,
     pub image_path: Option<String>,
@@ -24,6 +25,7 @@ pub struct ProductWithCategory {
     pub sku: Option<String>,
     pub name: String,
     pub price: f64,
+    pub cost_price: f64,
     pub stock: i64,
     pub barcode: Option<String>,
     pub image_path: Option<String>,
@@ -51,6 +53,7 @@ pub struct CreateProductPayload {
     pub barcode: Option<String>,
     pub category_id: Option<i64>,
     pub price: f64,
+    pub cost_price: f64,
     pub stock: i64,
     pub image_path: Option<String>,
 }
@@ -62,6 +65,7 @@ pub struct UpdateProductPayload {
     pub barcode: Option<String>,
     pub category_id: Option<i64>,
     pub price: f64,
+    pub cost_price: f64,
     pub is_active: bool,
     pub image_path: Option<String>,
 }

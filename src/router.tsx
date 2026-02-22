@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { useAuthStore } from "./store/authStore";
 import { Sidebar } from "./components/Sidebar";
+import { LowStockAlert } from "./components/LowStockAlert";
 
 import LoginPage from "./pages/LoginPage";
 import FirstSetupPage from "./pages/FirstSetupPage";
@@ -49,6 +50,7 @@ const protectedRoute = createRoute({
       <main className="flex-1 overflow-auto border-l border-border bg-muted/20">
         <Outlet />
       </main>
+      <LowStockAlert />
     </div>
   ),
 });

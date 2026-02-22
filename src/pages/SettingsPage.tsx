@@ -26,7 +26,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { Store, Receipt, Calculator, Printer, CheckCircle, Tag, User as UserIcon } from "lucide-react";
+import {
+  Store,
+  Receipt,
+  Calculator,
+  Printer,
+  CheckCircle,
+  Tag,
+  User as UserIcon,
+} from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 import { DiscountSettings } from "../features/settings/DiscountSettings";
 import { NumericInput } from "../components/NumericInput";
@@ -306,9 +314,7 @@ export default function SettingsPage() {
                   <Label>Receipt Copies</Label>
                   <NumericInput
                     value={settings.receipt.copies}
-                    onChange={(val) =>
-                      updateReceipt("copies", val)
-                    }
+                    onChange={(val) => updateReceipt("copies", val)}
                   />
                 </div>
               </div>
@@ -360,9 +366,7 @@ export default function SettingsPage() {
                     <Label>Tax Rate (%)</Label>
                     <NumericInput
                       value={settings.tax.rate}
-                      onChange={(val) =>
-                        updateTax("rate", val)
-                      }
+                      onChange={(val) => updateTax("rate", val)}
                       suffix="%"
                     />
                   </div>
@@ -403,20 +407,26 @@ export default function SettingsPage() {
                 <Label>Full Name</Label>
                 <Input
                   value={profileData.name}
-                  onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
+                  onChange={(e) =>
+                    setProfileData({ ...profileData, name: e.target.value })
+                  }
                 />
               </div>
               <div className="space-y-2">
                 <Label>Username</Label>
                 <Input
                   value={profileData.username}
-                  onChange={(e) => setProfileData({ ...profileData, username: e.target.value })}
+                  onChange={(e) =>
+                    setProfileData({ ...profileData, username: e.target.value })
+                  }
                 />
-                <p className="text-xs text-muted-foreground">This username is used for logging into the system.</p>
+                <p className="text-xs text-muted-foreground">
+                  This username is used for logging into the system.
+                </p>
               </div>
               <div className="pt-2">
-                <Button 
-                  onClick={handleUpdateProfile} 
+                <Button
+                  onClick={handleUpdateProfile}
                   disabled={isSavingProfile}
                 >
                   {isSavingProfile ? "Saving Profile..." : "Update Profile"}
@@ -429,35 +439,193 @@ export default function SettingsPage() {
         <TabsContent value="hardware">
           <Card>
             <CardHeader>
-              <CardTitle>Hardware Interactions</CardTitle>
+              <CardTitle>Printer & Hardware</CardTitle>
+              <CardDescription>
+                Konfigurasi koneksi printer thermal ESC/POS dan peringatan stok.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="space-y-2 max-w-md">
-                <Label>Printer Device Port / Connection string</Label>
-                <Input
-                  value={settings.printer_port}
-                  onChange={(e) => updateRoot("printer_port", e.target.value)}
-                  placeholder="/dev/usb/lp0 or COM3"
-                />
-              </div>
+              <PrinterSection
+                sessionToken={sessionToken || ""}
+                printerPort={settings.printer_port}
+                onPortChange={(val) => updateRoot("printer_port", val)}
+              />
 
-              <div className="space-y-2 max-w-md">
-                <Label>Low Stock Alert Threshold</Label>
-                <NumericInput
-                  value={settings.low_stock_threshold}
-                  onChange={(val) =>
-                    updateRoot("low_stock_threshold", val)
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Products with stock at or below this limit will be marked in
-                  red.
-                </p>
+              <div className="border-t pt-6">
+                <div className="space-y-2 max-w-md">
+                  <Label>Low Stock Alert Threshold</Label>
+                  <NumericInput
+                    value={settings.low_stock_threshold}
+                    onChange={(val) => updateRoot("low_stock_threshold", val)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Produk dengan stok ≤ ini akan ditampilkan di notifikasi stok
+                    kritis.
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// ──────── Printer Section Component ────────
+
+interface PrinterPortInfo {
+  path: string;
+  description: string;
+}
+
+function PrinterSection({
+  sessionToken,
+  printerPort,
+  onPortChange,
+}: {
+  sessionToken: string;
+  printerPort: string;
+  onPortChange: (val: string) => void;
+}) {
+  const [ports, setPorts] = useState<PrinterPortInfo[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<"idle" | "success" | "error">(
+    "idle",
+  );
+  const [testError, setTestError] = useState("");
+  const { toast } = useToast();
+
+  const scanPorts = async () => {
+    setIsScanning(true);
+    try {
+      const detected = await invoke<PrinterPortInfo[]>("list_serial_ports", {
+        sessionToken,
+      });
+      setPorts(detected);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Scan Gagal",
+        description: String(error),
+      });
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleTestPrint = async () => {
+    setIsTesting(true);
+    setTestResult("idle");
+    setTestError("");
+    try {
+      await invoke("test_print", { sessionToken });
+      setTestResult("success");
+      toast({
+        title: "Test Print Berhasil",
+        description: "Printer merespon dengan baik!",
+      });
+    } catch (error) {
+      setTestResult("error");
+      setTestError(String(error));
+      toast({
+        variant: "destructive",
+        title: "Test Print Gagal",
+        description: String(error),
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (sessionToken) scanPorts();
+  }, [sessionToken]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <Label className="text-base font-semibold">
+          Printer Thermal ESC/POS
+        </Label>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={scanPorts}
+          disabled={isScanning}
+        >
+          {isScanning ? (
+            <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary mr-2" />
+          ) : (
+            <Printer className="h-3 w-3 mr-2" />
+          )}
+          {isScanning ? "Scanning..." : "Scan Port"}
+        </Button>
+      </div>
+
+      <div className="space-y-2 max-w-md">
+        <Label>Port Printer</Label>
+        {ports.length > 1 ? (
+          <Select
+            value={printerPort || "none"}
+            onValueChange={(val: string) =>
+              onPortChange(val === "none" ? "" : val)
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Pilih port printer..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">-- Tidak ada --</SelectItem>
+              {ports
+                .filter((p) => p.path !== "network")
+                .map((p) => (
+                  <SelectItem key={p.path} value={p.path}>
+                    {p.description}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            value={printerPort}
+            onChange={(e) => onPortChange(e.target.value)}
+            placeholder="/dev/usb/lp0, COM3, atau 192.168.1.100:9100"
+          />
+        )}
+        <p className="text-xs text-muted-foreground">
+          USB: /dev/usb/lp0 (Linux) atau COM3 (Windows). Network: IP:PORT
+          (contoh: 192.168.1.100:9100)
+        </p>
+      </div>
+
+      <div className="flex items-center gap-3 pt-2">
+        <Button
+          variant="outline"
+          onClick={handleTestPrint}
+          disabled={isTesting || !printerPort || printerPort === "none"}
+        >
+          {isTesting ? (
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mr-2" />
+          ) : (
+            <Printer className="h-4 w-4 mr-2" />
+          )}
+          {isTesting ? "Mengirim..." : "Test Print"}
+        </Button>
+
+        {testResult === "success" && (
+          <span className="text-sm text-green-600 flex items-center gap-1">
+            <CheckCircle className="h-4 w-4" />
+            Printer terhubung!
+          </span>
+        )}
+        {testResult === "error" && (
+          <span className="text-sm text-destructive max-w-sm truncate">
+            ✗ {testError}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

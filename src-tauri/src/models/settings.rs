@@ -101,3 +101,11 @@ pub struct ShiftSummary {
     pub transaction_count: i64,
     pub total_revenue: f64,
 }
+
+/// Laporan laba kotor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfitReport {
+    pub total_cost: f64,
+    pub gross_profit: f64,
+    pub profit_margin: f64,
+}

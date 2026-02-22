@@ -7,13 +7,13 @@ import {
   DialogFooter,
 } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { ProductWithCategory } from "../../types";
 import { useInvokeMutation } from "../../hooks/useInvokeQuery";
 import { useAuthStore } from "../../store/authStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "../../hooks/use-toast";
+import { NumericInput } from "../../components/NumericInput";
 
 export function StockAdjust({
   open,
@@ -80,7 +80,7 @@ export function StockAdjust({
               <NumericInput
                 placeholder="Misal: 5 untuk tambah, -3 untuk kurang"
                 value={deltaStr === "" ? 0 : Number(deltaStr)}
-                onChange={(val) => setDeltaStr(val.toString())}
+                onChange={(val: number) => setDeltaStr(val.toString())}
               />
               <p className="text-[10px] text-muted-foreground pt-1 leading-tight uppercase font-bold">
                 Angka akan ditambahkan ke stok saat ini. Gunakan angka negatif untuk mengurangi.

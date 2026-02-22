@@ -65,6 +65,8 @@ pub fn run() {
             commands::product_cmd::create_category,
             commands::product_cmd::save_product_image,
             commands::product_cmd::generate_barcode,
+            commands::product_cmd::get_low_stock_products,
+            commands::product_cmd::bulk_import_products,
             // Discounts
             commands::discount_cmd::get_discounts,
             commands::discount_cmd::create_discount,
@@ -81,6 +83,7 @@ pub fn run() {
             commands::report_cmd::get_sales_chart,
             commands::report_cmd::get_top_products,
             commands::report_cmd::get_shift_summary,
+            commands::report_cmd::get_profit_report,
             // Activity & Stock Logs
             commands::activity_cmd::get_activity_logs,
             commands::activity_cmd::get_stock_history,
@@ -88,6 +91,7 @@ pub fn run() {
             commands::settings_cmd::get_settings,
             commands::settings_cmd::save_settings,
             commands::settings_cmd::save_logo,
+            commands::settings_cmd::list_serial_ports,
             commands::settings_cmd::print_receipt,
             commands::settings_cmd::test_print,
         ])

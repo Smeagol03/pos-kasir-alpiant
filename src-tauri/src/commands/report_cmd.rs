@@ -1,4 +1,4 @@
-use crate::models::settings::{ChartPoint, DailyReport, FinancialSummary, ProductStat, ShiftSummary};
+use crate::models::settings::{ChartPoint, DailyReport, FinancialSummary, ProductStat, ProfitReport, ShiftSummary};
 use crate::AppState;
 
 /// Ambil ringkasan keuangan untuk periode tertentu (Admin Only)
@@ -235,5 +235,47 @@ pub async fn get_shift_summary(
         login_at: login_time,
         transaction_count: count,
         total_revenue: revenue,
+    })
+}
+
+/// Laporan laba kotor (Admin Only)
+#[tauri::command]
+pub async fn get_profit_report(
+    state: tauri::State<'_, AppState>,
+    session_token: String,
+    start_date: String,
+    end_date: String,
+) -> Result<ProfitReport, String> {
+    crate::auth::guard::validate_admin(&state, &session_token)?;
+
+    // Hitung total cost (HPP) dari transaksi completed
+    let query = r#"
+        SELECT
+            ROUND(COALESCE(SUM(ti.quantity * p.cost_price), 0.0)) as total_cost,
+            ROUND(COALESCE(SUM(ti.subtotal), 0.0)) as total_revenue
+        FROM transaction_items ti
+        JOIN transactions t ON ti.transaction_id = t.id
+        JOIN products p ON ti.product_id = p.id
+        WHERE date(t.timestamp) BETWEEN ? AND ? AND t.status = 'COMPLETED'
+    "#;
+
+    let (total_cost, total_revenue): (f64, f64) = sqlx::query_as(query)
+        .bind(&start_date)
+        .bind(&end_date)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let gross_profit = total_revenue - total_cost;
+    let profit_margin = if total_revenue > 0.0 {
+        (gross_profit / total_revenue) * 100.0
+    } else {
+        0.0
+    };
+
+    Ok(ProfitReport {
+        total_cost,
+        gross_profit,
+        profit_margin,
     })
 }
