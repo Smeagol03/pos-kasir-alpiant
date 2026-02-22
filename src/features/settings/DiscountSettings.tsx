@@ -32,6 +32,7 @@ import {
 import { Plus, Pencil, Loader2 } from "lucide-react";
 import { formatRupiah } from "../../lib/currency";
 import { Badge } from "../../components/ui/badge";
+import { NumericInput } from "../../components/NumericInput";
 
 export function DiscountSettings() {
   const [discounts, setDiscounts] = useState<Discount[]>([]);
@@ -247,31 +248,32 @@ export function DiscountSettings() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="value">Nilai</Label>
-                  <Input
+                  <NumericInput
                     id="value"
-                    type="number"
-                    value={editingDiscount.value}
-                    onChange={(e) =>
+                    value={editingDiscount.value || 0}
+                    onChange={(val) =>
                       setEditingDiscount({
                         ...editingDiscount,
-                        value: Number(e.target.value),
+                        value: val,
                       })
                     }
+                    prefix={editingDiscount.type === "NOMINAL" ? "Rp" : undefined}
+                    suffix={editingDiscount.type === "PERCENT" ? "%" : undefined}
                   />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="min_purchase">Minimum Pembelian (Rp)</Label>
-                <Input
+                <NumericInput
                   id="min_purchase"
-                  type="number"
-                  value={editingDiscount.min_purchase}
-                  onChange={(e) =>
+                  value={editingDiscount.min_purchase || 0}
+                  onChange={(val) =>
                     setEditingDiscount({
                       ...editingDiscount,
-                      min_purchase: Number(e.target.value),
+                      min_purchase: val,
                     })
                   }
+                  prefix="Rp"
                 />
               </div>
               <div className="flex items-center justify-between">

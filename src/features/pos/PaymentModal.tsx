@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -7,7 +7,6 @@ import {
   DialogFooter,
 } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
 import { useCartStore } from "../../store/cartStore";
 import { formatRupiah } from "../../lib/currency";
 import { NumpadInput } from "./NumpadInput";
@@ -20,6 +19,7 @@ import { invoke } from "../../lib/tauri";
 import { useAuthStore } from "../../store/authStore";
 import { useToast } from "../../hooks/use-toast";
 import { Banknote, CreditCard, QrCode } from "lucide-react";
+import { NumericInput } from "../../components/NumericInput";
 
 export function PaymentModal({
   open,
@@ -31,35 +31,32 @@ export function PaymentModal({
   onSuccess: (transaction: Transaction) => void;
 }) {
   const [method, setMethod] = useState<PaymentMethod>("CASH");
-  const [amountPaidStr, setAmountPaidStr] = useState("0");
+  const [amountPaid, setAmountPaid] = useState(0);
   const [loading, setLoading] = useState(false);
 
   const { toast } = useToast();
   const sessionToken = useAuthStore((s) => s.sessionToken);
-  const {
-    items,
-    getTotal,
-    discount_id,
-    discount_amount,
-    clearCart,
-  } = useCartStore();
+  const { items, getTotal, discount_id, discount_amount, clearCart } =
+    useCartStore();
 
   const total = getTotal();
-  const amountPaid = Number(amountPaidStr) || 0;
   const change = Math.max(0, amountPaid - total);
 
-  // Set required amount paid string on mount or total change
-  useState(() => {
-    if (open) setAmountPaidStr(total.toString());
-  });
+  // Initialize amount when modal opens
+  useEffect(() => {
+    if (open) {
+      setAmountPaid(total);
+      setMethod("CASH");
+    }
+  }, [open, total]);
 
   const handlePay = async () => {
     if (method === "CASH" && amountPaid < total) {
       toast({
         variant: "destructive",
-        title: "Invalid Amount",
+        title: "Jumlah Tidak Valid",
         description:
-          "Amount paid cannot be less than the total for Cash payments.",
+          "Uang yang dibayarkan tidak boleh kurang dari total untuk pembayaran tunai.",
       });
       return;
     }
@@ -88,16 +85,10 @@ export function PaymentModal({
       clearCart();
       onSuccess(transaction);
       onOpenChange(false);
-
-      // Attempt to print (stubbed on backend)
-      invoke("print_receipt", {
-        sessionToken,
-        transactionId: transaction.id,
-      }).catch(console.error);
     } catch (error) {
       toast({
         variant: "destructive",
-        title: "Transaction Failed",
+        title: "Transaksi Gagal",
         description: String(error),
       });
     } finally {
@@ -109,7 +100,7 @@ export function PaymentModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Complete Payment</DialogTitle>
+          <DialogTitle>Selesaikan Pembayaran</DialogTitle>
         </DialogHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -117,7 +108,7 @@ export function PaymentModal({
           <div className="space-y-6">
             <div className="bg-primary/10 p-6 rounded-lg border border-primary/20 text-center">
               <div className="text-sm font-medium text-muted-foreground mb-1">
-                Total Due
+                Total Tagihan
               </div>
               <div className="text-4xl font-black text-primary">
                 {formatRupiah(total)}
@@ -125,7 +116,7 @@ export function PaymentModal({
             </div>
 
             <div className="space-y-3">
-              <div className="text-sm font-medium">Payment Method</div>
+              <div className="text-sm font-medium">Metode Pembayaran</div>
               <div className="grid grid-cols-3 gap-2">
                 <Button
                   variant={method === "CASH" ? "default" : "outline"}
@@ -133,14 +124,14 @@ export function PaymentModal({
                   onClick={() => setMethod("CASH")}
                 >
                   <Banknote className="h-5 w-5" />
-                  <span>Cash</span>
+                  <span>Tunai</span>
                 </Button>
                 <Button
                   variant={method === "DEBIT" ? "default" : "outline"}
                   className="h-16 flex flex-col items-center justify-center gap-1"
                   onClick={() => {
                     setMethod("DEBIT");
-                    setAmountPaidStr(total.toString());
+                    setAmountPaid(total);
                   }}
                 >
                   <CreditCard className="h-5 w-5" />
@@ -151,7 +142,7 @@ export function PaymentModal({
                   className="h-16 flex flex-col items-center justify-center gap-1"
                   onClick={() => {
                     setMethod("QRIS");
-                    setAmountPaidStr(total.toString());
+                    setAmountPaid(total);
                   }}
                 >
                   <QrCode className="h-5 w-5" />
@@ -162,7 +153,7 @@ export function PaymentModal({
 
             {method === "CASH" && (
               <div className="bg-muted/50 p-4 rounded-lg flex justify-between items-center text-lg">
-                <span className="font-medium">Change:</span>
+                <span className="font-medium">Kembalian:</span>
                 <span
                   className={`font-bold ${change > 0 ? "text-emerald-500" : ""}`}
                 >
@@ -176,24 +167,14 @@ export function PaymentModal({
           <div className="border border-border rounded-lg p-4 bg-card shadow-sm">
             <div className="mb-4">
               <div className="text-sm text-muted-foreground mb-1">
-                Amount Given
+                Uang Diberikan
               </div>
-              <Input
-                type="text"
+              <NumericInput
                 autoFocus
                 className={`text-right text-3xl font-mono h-14 p-3 rounded-md border bg-background ${method !== "CASH" ? "opacity-50" : ""}`}
-                value={
-                  method !== "CASH"
-                    ? formatRupiah(total)
-                    : amountPaidStr === "0"
-                      ? ""
-                      : amountPaidStr
-                }
+                value={method !== "CASH" ? total : amountPaid}
                 disabled={method !== "CASH"}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/[^0-9]/g, "");
-                  setAmountPaidStr(val || "0");
-                }}
+                onChange={(val) => setAmountPaid(val)}
                 onKeyDown={(e) => {
                   if (
                     e.key === "Enter" &&
@@ -204,6 +185,7 @@ export function PaymentModal({
                     handlePay();
                   }
                 }}
+                prefix="Rp"
                 placeholder={formatRupiah(total)}
               />
             </div>
@@ -214,12 +196,8 @@ export function PaymentModal({
               }
             >
               <NumpadInput
-                value={
-                  amountPaidStr === "0" && method === "CASH"
-                    ? ""
-                    : amountPaidStr
-                }
-                onChange={(v) => setAmountPaidStr(v || "0")}
+                value={amountPaid === 0 && method === "CASH" ? "" : amountPaid.toString()}
+                onChange={(v) => setAmountPaid(Number(v) || 0)}
               />
             </div>
           </div>
@@ -227,7 +205,7 @@ export function PaymentModal({
 
         <DialogFooter className="mt-6 border-t pt-4">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            Batal
           </Button>
           <Button
             size="lg"
@@ -235,7 +213,7 @@ export function PaymentModal({
             onClick={handlePay}
             disabled={loading || (method === "CASH" && amountPaid < total)}
           >
-            {loading ? "Processing..." : "Confirm Pay"}
+            {loading ? "Memproses..." : "Konfirmasi"}
           </Button>
         </DialogFooter>
       </DialogContent>

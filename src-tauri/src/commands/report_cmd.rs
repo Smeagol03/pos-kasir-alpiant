@@ -1,5 +1,72 @@
-use crate::models::settings::{ChartPoint, DailyReport, ProductStat, ShiftSummary};
+use crate::models::settings::{ChartPoint, DailyReport, FinancialSummary, ProductStat, ShiftSummary};
 use crate::AppState;
+
+/// Ambil ringkasan keuangan untuk periode tertentu (Admin Only)
+#[tauri::command]
+pub async fn get_financial_summary(
+    state: tauri::State<'_, AppState>,
+    session_token: String,
+    start_date: String,
+    end_date: String,
+) -> Result<FinancialSummary, String> {
+    crate::auth::guard::validate_admin(&state, &session_token)?;
+
+    let query = r#"
+        SELECT
+            COUNT(id) as transaction_count,
+            COALESCE(SUM(total_amount), 0) as gross_revenue,
+            COALESCE(SUM(tax_amount), 0) as tax_total,
+            COALESCE(SUM(discount_amount), 0) as discount_total,
+            COALESCE(SUM(CASE WHEN payment_method = 'CASH' THEN total_amount ELSE 0 END), 0) as cash_total,
+            COALESCE(SUM(CASE WHEN payment_method = 'DEBIT' THEN total_amount ELSE 0 END), 0) as debit_total,
+            COALESCE(SUM(CASE WHEN payment_method = 'QRIS' THEN total_amount ELSE 0 END), 0) as qris_total
+        FROM transactions
+        WHERE date(timestamp) BETWEEN ? AND ? AND status = 'COMPLETED'
+    "#;
+
+    let (trx_count, gross, tax, discount, cash, debit, qris): (i64, f64, f64, f64, f64, f64, f64) =
+        sqlx::query_as(query)
+            .bind(&start_date)
+            .bind(&end_date)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    let void_query = r#"
+        SELECT
+            COUNT(id) as void_count,
+            COALESCE(SUM(total_amount), 0) as void_total
+        FROM transactions
+        WHERE date(timestamp) BETWEEN ? AND ? AND status = 'VOID'
+    "#;
+
+    let (void_count, void_total): (i64, f64) = sqlx::query_as(void_query)
+        .bind(&start_date)
+        .bind(&end_date)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Net revenue = Gross revenue - Tax (if tax is NOT included)
+    // Actually in accounting, Net Sales = Gross Sales - Discounts - Returns
+    // Here we use Net Revenue = Total - Tax
+    let net_revenue = gross - tax;
+
+    Ok(FinancialSummary {
+        start_date,
+        end_date,
+        gross_revenue: gross,
+        net_revenue,
+        tax_total: tax,
+        discount_total: discount,
+        transaction_count: trx_count,
+        cash_total: cash,
+        debit_total: debit,
+        qris_total: qris,
+        void_count,
+        void_total,
+    })
+}
 
 /// Ambil laporan harian (Admin Only)
 #[tauri::command]
@@ -10,7 +77,7 @@ pub async fn get_daily_report(
 ) -> Result<DailyReport, String> {
     crate::auth::guard::validate_admin(&state, &session_token)?;
 
-    let query = "
+    let query = r#"
         SELECT
             COUNT(id) as transaction_count,
             COALESCE(SUM(total_amount), 0) as total_revenue,
@@ -20,7 +87,7 @@ pub async fn get_daily_report(
             SUM(CASE WHEN status = 'VOID' THEN 1 ELSE 0 END) as void_count
         FROM transactions
         WHERE date(timestamp) = ?
-    ";
+    "#;
 
     let (trx_count, revenue, cash, debit, qris, void): (i64, f64, f64, f64, f64, i64) =
         sqlx::query_as(query)
@@ -29,12 +96,12 @@ pub async fn get_daily_report(
             .await
             .map_err(|e| e.to_string())?;
 
-    let items_query = "
+    let items_query = r#"
         SELECT COALESCE(SUM(ti.quantity), 0) as total_items
         FROM transaction_items ti
         JOIN transactions t ON ti.transaction_id = t.id
         WHERE date(t.timestamp) = ? AND t.status != 'VOID'
-    ";
+    "#;
 
     let (items_count,): (i64,) = sqlx::query_as(items_query)
         .bind(&date)
@@ -71,7 +138,7 @@ pub async fn get_sales_chart(
 ) -> Result<Vec<ChartPoint>, String> {
     crate::auth::guard::validate_admin(&state, &session_token)?;
 
-    let query = "
+    let query = r#"
         SELECT
             date(timestamp) as date,
             COALESCE(SUM(total_amount), 0) as revenue,
@@ -80,7 +147,7 @@ pub async fn get_sales_chart(
         WHERE date(timestamp) BETWEEN ? AND ? AND status != 'VOID'
         GROUP BY date(timestamp)
         ORDER BY date(timestamp) ASC
-    ";
+    "#;
 
     let points = sqlx::query_as::<_, ChartPoint>(query)
         .bind(&start_date)
@@ -103,7 +170,7 @@ pub async fn get_top_products(
 ) -> Result<Vec<ProductStat>, String> {
     crate::auth::guard::validate_admin(&state, &session_token)?;
 
-    let query = "
+    let query = r#"
         SELECT
             p.id as product_id,
             p.name as name,
@@ -116,7 +183,7 @@ pub async fn get_top_products(
         GROUP BY p.id
         ORDER BY total_sold DESC
         LIMIT ?
-    ";
+    "#;
 
     let stats = sqlx::query_as::<_, ProductStat>(query)
         .bind(&start_date)
@@ -140,13 +207,13 @@ pub async fn get_shift_summary(
     // Gunakan login_at dari session
     let login_time = session.login_at.to_rfc3339();
 
-    let query = "
+    let query = r#"
         SELECT
             COUNT(id) as count,
             COALESCE(SUM(total_amount), 0) as revenue
         FROM transactions
         WHERE cashier_id = ? AND timestamp >= ? AND status != 'VOID'
-    ";
+    "#;
 
     // Gunakan rfc3339 string untuk SQLite comparison (pastikan format setara)
     // Atau jika sqlite simpan timestamp dalam UTC, compare langsung.

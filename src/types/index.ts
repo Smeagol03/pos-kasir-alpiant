@@ -121,6 +121,21 @@ export interface PaginatedTransactions {
     per_page: number;
 }
 
+export interface FinancialSummary {
+    start_date: string;
+    end_date: string;
+    gross_revenue: number;
+    net_revenue: number;
+    tax_total: number;
+    discount_total: number;
+    transaction_count: number;
+    cash_total: number;
+    debit_total: number;
+    qris_total: number;
+    void_count: number;
+    void_total: number;
+}
+
 export interface DailyReport {
     date: string;
     total_revenue: number;

@@ -26,12 +26,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { Store, Receipt, Calculator, Printer, CheckCircle, Tag } from "lucide-react";
+import { Store, Receipt, Calculator, Printer, CheckCircle, Tag, User as UserIcon } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 import { DiscountSettings } from "../features/settings/DiscountSettings";
+import { NumericInput } from "../components/NumericInput";
+import { invoke } from "../lib/tauri";
 
 export default function SettingsPage() {
-  const sessionToken = useAuthStore((s) => s.sessionToken);
+  const { user, sessionToken, setUser } = useAuthStore();
   const { toast } = useToast();
 
   const { data: initialSettings, isLoading } = useInvokeQuery<AppSettings>(
@@ -41,10 +43,24 @@ export default function SettingsPage() {
   );
 
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [profileData, setProfileData] = useState({
+    name: user?.name || "",
+    username: user?.username || "",
+  });
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   useEffect(() => {
     if (initialSettings) setSettings(initialSettings);
   }, [initialSettings]);
+
+  useEffect(() => {
+    if (user) {
+      setProfileData({
+        name: user.name,
+        username: user.username,
+      });
+    }
+  }, [user]);
 
   const saveMutation = useInvokeMutation("save_settings", {
     onSuccess: () => {
@@ -64,6 +80,34 @@ export default function SettingsPage() {
   const handleSave = () => {
     if (!settings) return;
     saveMutation.mutate({ sessionToken, payload: settings });
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!user) return;
+    setIsSavingProfile(true);
+    try {
+      const updatedUser = await invoke<any>("update_user", {
+        sessionToken,
+        id: user.id,
+        payload: {
+          name: profileData.name,
+          username: profileData.username,
+        },
+      });
+      setUser(updatedUser);
+      toast({
+        title: "Profile Updated",
+        description: "Your account details have been updated successfully.",
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Update Failed",
+        description: String(error),
+      });
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const updateCompany = (key: keyof AppSettings["company"], val: string) => {
@@ -110,7 +154,7 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="company" className="w-full">
-        <TabsList className="grid w-full grid-cols-5 mb-4">
+        <TabsList className="grid w-full grid-cols-6 mb-4">
           <TabsTrigger value="company">
             <Store className="h-4 w-4 mr-2" /> Store
           </TabsTrigger>
@@ -122,6 +166,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="discounts">
             <Tag className="h-4 w-4 mr-2" /> Discounts
+          </TabsTrigger>
+          <TabsTrigger value="account">
+            <UserIcon className="h-4 w-4 mr-2" /> Account
           </TabsTrigger>
           <TabsTrigger value="hardware">
             <Printer className="h-4 w-4 mr-2" /> Hardware
@@ -257,13 +304,10 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Receipt Copies</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="3"
+                  <NumericInput
                     value={settings.receipt.copies}
-                    onChange={(e) =>
-                      updateReceipt("copies", Number(e.target.value))
+                    onChange={(val) =>
+                      updateReceipt("copies", val)
                     }
                   />
                 </div>
@@ -314,13 +358,12 @@ export default function SettingsPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Tax Rate (%)</Label>
-                    <Input
-                      type="number"
-                      step="0.1"
+                    <NumericInput
                       value={settings.tax.rate}
-                      onChange={(e) =>
-                        updateTax("rate", Number(e.target.value))
+                      onChange={(val) =>
+                        updateTax("rate", val)
                       }
+                      suffix="%"
                     />
                   </div>
                 </div>
@@ -347,6 +390,42 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="account">
+          <Card>
+            <CardHeader>
+              <CardTitle>My Profile</CardTitle>
+              <CardDescription>
+                Update your administrative account details.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Full Name</Label>
+                <Input
+                  value={profileData.name}
+                  onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Username</Label>
+                <Input
+                  value={profileData.username}
+                  onChange={(e) => setProfileData({ ...profileData, username: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">This username is used for logging into the system.</p>
+              </div>
+              <div className="pt-2">
+                <Button 
+                  onClick={handleUpdateProfile} 
+                  disabled={isSavingProfile}
+                >
+                  {isSavingProfile ? "Saving Profile..." : "Update Profile"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="hardware">
           <Card>
             <CardHeader>
@@ -364,11 +443,10 @@ export default function SettingsPage() {
 
               <div className="space-y-2 max-w-md">
                 <Label>Low Stock Alert Threshold</Label>
-                <Input
-                  type="number"
+                <NumericInput
                   value={settings.low_stock_threshold}
-                  onChange={(e) =>
-                    updateRoot("low_stock_threshold", Number(e.target.value))
+                  onChange={(val) =>
+                    updateRoot("low_stock_threshold", val)
                   }
                 />
                 <p className="text-xs text-muted-foreground">

@@ -122,7 +122,6 @@ export function UserForm({
               onChange={(e) =>
                 setFormData({ ...formData, username: e.target.value })
               }
-              disabled={user?.role === "ADMIN"} // Prevent editing admin username from here for safety
             />
           </div>
 

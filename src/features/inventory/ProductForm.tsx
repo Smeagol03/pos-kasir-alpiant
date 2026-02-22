@@ -25,6 +25,7 @@ import { useAuthStore } from "../../store/authStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "../../hooks/use-toast";
 import { Product } from "../../types";
+import { NumericInput } from "../../components/NumericInput";
 
 export function ProductForm({
   open,
@@ -40,8 +41,8 @@ export function ProductForm({
     sku: "",
     barcode: "",
     category_id: "none",
-    price: "",
-    stock: "",
+    price: 0,
+    stock: 0,
     is_active: true,
   });
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -63,8 +64,8 @@ export function ProductForm({
         sku: product.sku || "",
         barcode: product.barcode || "",
         category_id: product.category_id?.toString() || "none",
-        price: product.price.toString(),
-        stock: product.stock.toString(),
+        price: product.price,
+        stock: product.stock,
         is_active: product.is_active,
       });
     } else {
@@ -73,8 +74,8 @@ export function ProductForm({
         sku: "",
         barcode: "",
         category_id: "none",
-        price: "",
-        stock: "",
+        price: 0,
+        stock: 0,
         is_active: true,
       });
     }
@@ -189,8 +190,8 @@ export function ProductForm({
       barcode: formData.barcode || null,
       category_id:
         formData.category_id === "none" ? null : Number(formData.category_id),
-      price: Number(formData.price),
-      stock: product ? product.stock : Number(formData.stock), // Stock only on create via payload
+      price: formData.price,
+      stock: product ? product.stock : formData.stock, // Stock only on create via payload
       is_active: formData.is_active,
     };
 
@@ -318,13 +319,11 @@ export function ProductForm({
             </div>
             <div className="space-y-2">
               <Label>Price *</Label>
-              <Input
+              <NumericInput
                 required
-                type="number"
                 value={formData.price}
-                onChange={(e) =>
-                  setFormData({ ...formData, price: e.target.value })
-                }
+                onChange={(val) => setFormData({ ...formData, price: val })}
+                prefix="Rp"
               />
             </div>
           </div>
@@ -332,13 +331,10 @@ export function ProductForm({
           {!product && (
             <div className="space-y-2">
               <Label>Initial Stock *</Label>
-              <Input
+              <NumericInput
                 required
-                type="number"
                 value={formData.stock}
-                onChange={(e) =>
-                  setFormData({ ...formData, stock: e.target.value })
-                }
+                onChange={(val) => setFormData({ ...formData, stock: val })}
               />
             </div>
           )}

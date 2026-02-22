@@ -137,7 +137,7 @@ export const useCartStore = create<CartState>()((set, get) => ({
         const state = get();
         const subtotal = state.getSubtotal();
         if (state.discount_percent !== null) {
-            return subtotal * (state.discount_percent / 100);
+            return Math.round(subtotal * (state.discount_percent / 100));
         }
         return state.discount_amount;
     },
@@ -156,9 +156,12 @@ export const useCartStore = create<CartState>()((set, get) => ({
         const taxableAmount = state.getTaxableAmount();
 
         if (state.tax_included) {
-            return taxableAmount - taxableAmount / (1 + state.tax_rate / 100);
+            // Tax already included in price: extract tax portion
+            // e.g. price=2500, rate=10% -> tax = 2500 - (2500 / 1.1) = 227
+            return Math.round(taxableAmount - taxableAmount / (1 + state.tax_rate / 100));
         } else {
-            return taxableAmount * (state.tax_rate / 100);
+            // Tax added on top
+            return Math.round(taxableAmount * (state.tax_rate / 100));
         }
     },
 
@@ -167,9 +170,11 @@ export const useCartStore = create<CartState>()((set, get) => ({
         const taxableAmount = state.getTaxableAmount();
 
         if (!state.tax_enabled || state.tax_rate <= 0 || state.tax_included) {
+            // When tax is included, the total equals the taxable amount (price already has tax)
             return taxableAmount;
         } else {
-            const tax = taxableAmount * (state.tax_rate / 100);
+            // When tax is excluded, add tax on top
+            const tax = Math.round(taxableAmount * (state.tax_rate / 100));
             return taxableAmount + tax;
         }
     },

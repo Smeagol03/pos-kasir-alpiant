@@ -2,17 +2,8 @@ import { useCartStore } from "../../store/cartStore";
 import { formatRupiah } from "../../lib/currency";
 import { Button } from "../../components/ui/button";
 import { ScrollArea } from "../../components/ui/scroll-area";
-import { Trash2, Plus, Minus, Tag, Banknote, Percent } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
-import { useState } from "react";
+import { Trash2, Plus, Minus, Tag, Banknote, ShoppingCart, Info, Percent } from "lucide-react";
+import { Separator } from "../../components/ui/separator";
 
 export function CartPanel({
   onCheckout,
@@ -36,22 +27,7 @@ export function CartPanel({
     tax_included,
     tax_label,
     tax_enabled,
-    setItemDiscount,
   } = useCartStore();
-
-  const [discountItemOpen, setDiscountItemOpen] = useState<{
-    id: number;
-    name: string;
-    amount: number;
-  } | null>(null);
-  const [discountItemInput, setDiscountItemInput] = useState("");
-
-  const handleApplyItemDiscount = () => {
-    if (discountItemOpen) {
-      setItemDiscount(discountItemOpen.id, Number(discountItemInput) || 0);
-      setDiscountItemOpen(null);
-    }
-  };
 
   const subtotal = getSubtotal();
   const discountTotal = getDiscountAmount();
@@ -64,93 +40,99 @@ export function CartPanel({
   }
 
   return (
-    <div className="flex flex-col h-full bg-card rounded-md border border-border">
-      <div className="p-4 border-b border-border font-bold text-lg">
-        Current Order
+    <div className="flex flex-col h-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
+      {/* Receipt Header */}
+      <div className="p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/50 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+            <ShoppingCart className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="font-black text-lg text-slate-900 dark:text-white leading-tight uppercase tracking-tight">
+              Pesanan
+            </h2>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+              {items.length} Item Ditambahkan
+            </p>
+          </div>
+        </div>
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          className="text-destructive hover:bg-destructive/10 h-8 w-8 rounded-lg"
+          onClick={clearCart}
+          disabled={items.length === 0}
+          title="Kosongkan Keranjang"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
       </div>
 
-      <ScrollArea className="flex-1 p-4">
+      <ScrollArea className="flex-1 px-5 pt-4">
         {items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground opacity-50 py-10">
-            <ShoppingCartIcon className="h-16 w-16 mb-4" />
-            <p>Cart is empty</p>
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 py-16 text-center space-y-4">
+            <div className="p-6 bg-slate-50 dark:bg-slate-800/30 rounded-full border-2 border-dashed border-slate-100 dark:border-slate-800">
+              <ShoppingCartIcon className="h-12 w-12 opacity-10" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-bold text-slate-500 dark:text-slate-400">Keranjang Kosong</p>
+              <p className="text-xs">Silahkan pilih produk di sebelah kiri</p>
+            </div>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 pb-4">
             {items.map((item) => (
               <div
                 key={item.product_id}
-                className="flex flex-col space-y-2 pb-4 border-b border-border/50 last:border-0 last:pb-0"
+                className="group flex flex-col space-y-3 pb-4 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0"
               >
-                <div className="flex justify-between items-start">
-                  <span className="font-medium text-sm line-clamp-2 pr-2">
-                    {item.product_name}
-                  </span>
-                  <div className="flex flex-col items-end">
-                    <span className="font-bold whitespace-nowrap">
-                      {formatRupiah(
-                        item.price * item.quantity -
-                          (item.discount_amount || 0),
-                      )}
+                <div className="flex justify-between items-start gap-4">
+                  <div className="flex-1 space-y-1">
+                    <span className="font-bold text-sm text-slate-800 dark:text-slate-200 leading-tight block truncate">
+                      {item.product_name}
                     </span>
-                    {(item.discount_amount || 0) > 0 && (
-                      <span className="text-xs font-normal text-emerald-500">
-                        -{formatRupiah(item.discount_amount)}
-                      </span>
-                    )}
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      {formatRupiah(item.price)} x {item.quantity}
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className="font-black text-slate-900 dark:text-white">
+                      {formatRupiah(item.price * item.quantity)}
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center justify-between mt-1">
-                  <span className="text-muted-foreground text-xs">
-                    {formatRupiah(item.price)} x {item.quantity}
-                  </span>
-                  <div className="flex items-center space-x-1">
+                
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center bg-slate-50 dark:bg-slate-800 rounded-lg p-1 border border-slate-100 dark:border-slate-700">
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="icon"
-                      className="h-7 w-7 mr-2"
-                      onClick={() => {
-                        setDiscountItemOpen({
-                          id: item.product_id,
-                          name: item.product_name,
-                          amount: item.discount_amount || 0,
-                        });
-                        setDiscountItemInput(
-                          (item.discount_amount || 0).toString(),
-                        );
-                      }}
-                      title="Item discount"
-                    >
-                      <Percent className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-7 w-7"
+                      className="h-7 w-7 rounded-md hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm"
                       onClick={() => updateQuantity(item.product_id, -1)}
                     >
                       <Minus className="h-3 w-3" />
                     </Button>
-                    <span className="w-6 text-center text-sm font-medium">
+                    <span className="w-8 text-center text-xs font-black text-slate-900 dark:text-white">
                       {item.quantity}
                     </span>
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="icon"
-                      className="h-7 w-7"
+                      className="h-7 w-7 rounded-md hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm"
                       onClick={() => updateQuantity(item.product_id, 1)}
                     >
                       <Plus className="h-3 w-3" />
                     </Button>
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      className="h-7 w-7 ml-2"
-                      onClick={() => removeItem(item.product_id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
                   </div>
+                  
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive/50 hover:text-destructive hover:bg-destructive/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => removeItem(item.product_id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             ))}
@@ -158,96 +140,73 @@ export function CartPanel({
         )}
       </ScrollArea>
 
-      <div className="p-4 border-t border-border bg-muted/10 space-y-3">
-        <div className="space-y-1 text-sm">
-          <div className="flex justify-between text-muted-foreground">
-            <span>Subtotal</span>
-            <span>{formatRupiah(subtotal)}</span>
+      {/* Receipt Footer / Totals */}
+      <div className="p-6 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-sm border-t border-slate-200 dark:border-slate-800 space-y-5">
+        <div className="space-y-2.5">
+          <div className="flex justify-between items-center text-sm font-medium">
+            <span className="text-slate-500">Subtotal</span>
+            <span className="text-slate-900 dark:text-white font-bold">{formatRupiah(subtotal)}</span>
           </div>
+          
           {discountTotal > 0 && (
-            <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
-              <span className="flex items-center gap-1">
-                Discount {discount_name && `(${discount_name})`}
-              </span>
-              <span>-{formattedDiscount}</span>
+            <div className="flex justify-between items-center text-sm">
+              <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
+                <Tag className="h-3.5 w-3.5" />
+                <span>Diskon {discount_name && `(${discount_name})`}</span>
+              </div>
+              <span className="text-emerald-600 dark:text-emerald-400 font-black">-{formattedDiscount}</span>
             </div>
           )}
+          
           {tax_enabled && tax_rate > 0 && (
-            <div className="flex justify-between text-muted-foreground">
-              <span>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-slate-500 font-medium">
                 {tax_label} ({tax_rate}%{tax_included ? " Incl." : ""})
               </span>
-              <span>{formatRupiah(tax)}</span>
+              <span className="text-slate-900 dark:text-white font-bold">{formatRupiah(tax)}</span>
             </div>
           )}
-        </div>
-        <div className="flex justify-between items-end border-t border-border/50 pt-2">
-          <span className="font-bold text-lg">Total</span>
-          <span className="font-black text-2xl text-primary">
-            {formatRupiah(total)}
-          </span>
+          
+          <Separator className="bg-slate-200 dark:bg-slate-800" />
+          
+          <div className="flex justify-between items-end pt-1">
+            <span className="font-black text-slate-500 uppercase tracking-widest text-xs mb-1">Total Bayar</span>
+            <span className="font-black text-3xl text-primary tracking-tight">
+              {formatRupiah(total)}
+            </span>
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 pt-2">
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              variant="outline"
+              className="w-full flex gap-2 h-11 font-bold border-slate-200 dark:border-slate-800 hover:bg-white dark:hover:bg-slate-800 transition-all active:scale-95"
+              onClick={onDiscount}
+              disabled={items.length === 0}
+            >
+              <Percent className="h-4 w-4" /> Diskon
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full flex gap-2 h-11 font-bold border-slate-200 dark:border-slate-800 hover:bg-white dark:hover:bg-slate-800 text-destructive hover:text-destructive active:scale-95"
+              onClick={clearCart}
+              disabled={items.length === 0}
+            >
+              <Info className="h-4 w-4" /> Void
+            </Button>
+          </div>
+          
           <Button
-            variant="outline"
-            className="w-full flex gap-2"
-            onClick={onDiscount}
+            size="lg"
+            className="w-full h-16 text-xl font-black uppercase tracking-wider flex items-center justify-center gap-3 shadow-lg shadow-primary/20 active:scale-[0.98] transition-all rounded-xl"
+            onClick={onCheckout}
             disabled={items.length === 0}
           >
-            <Tag className="h-4 w-4" /> Add Discount
-          </Button>
-          <Button
-            variant="destructive"
-            className="w-full"
-            onClick={clearCart}
-            disabled={items.length === 0}
-          >
-            Void Cart
+            <Banknote className="h-6 w-6" /> BAYAR
           </Button>
         </div>
-        <Button
-          size="lg"
-          className="w-full mt-2 h-14 text-xl flex items-center justify-center gap-2"
-          onClick={onCheckout}
-          disabled={items.length === 0}
-        >
-          <Banknote className="h-6 w-6" /> Pay
-        </Button>
       </div>
-
-      {discountItemOpen && (
-        <Dialog
-          open={!!discountItemOpen}
-          onOpenChange={(open) => !open && setDiscountItemOpen(null)}
-        >
-          <DialogContent className="sm:max-w-[300px]">
-            <DialogHeader>
-              <DialogTitle>Discount for {discountItemOpen.name}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label>Nominal Discount (Rp)</Label>
-                <Input
-                  type="number"
-                  autoFocus
-                  value={discountItemInput}
-                  onChange={(e) => setDiscountItemInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleApplyItemDiscount();
-                  }}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setDiscountItemOpen(null)}>
-                Cancel
-              </Button>
-              <Button onClick={handleApplyItemDiscount}>Apply</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 }

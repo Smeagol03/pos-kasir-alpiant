@@ -45,6 +45,23 @@ pub struct AppSettings {
     pub timezone: String,
 }
 
+/// Laporan keuangan lengkap untuk periode tertentu.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FinancialSummary {
+    pub start_date: String,
+    pub end_date: String,
+    pub gross_revenue: f64,
+    pub net_revenue: f64,
+    pub tax_total: f64,
+    pub discount_total: f64,
+    pub transaction_count: i64,
+    pub cash_total: f64,
+    pub debit_total: f64,
+    pub qris_total: f64,
+    pub void_count: i64,
+    pub void_total: f64,
+}
+
 /// Data laporan harian.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyReport {

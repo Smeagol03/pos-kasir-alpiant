@@ -77,6 +77,7 @@ pub fn run() {
             commands::transaction_cmd::get_transaction_detail,
             // Reports
             commands::report_cmd::get_daily_report,
+            commands::report_cmd::get_financial_summary,
             commands::report_cmd::get_sales_chart,
             commands::report_cmd::get_top_products,
             commands::report_cmd::get_shift_summary,
