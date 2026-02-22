@@ -217,6 +217,40 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     )
     .await;
 
+    // ═══════════════════════════════════════
+    // TABLE: activity_logs (Audit Trail)
+    // ═══════════════════════════════════════
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS activity_logs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            action      TEXT    NOT NULL, -- 'LOGIN', 'CREATE_PRODUCT', 'VOID_TRANSACTION', etc.
+            description TEXT    NOT NULL,
+            metadata    TEXT,             -- JSON string for extra data
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    // ═══════════════════════════════════════
+    // TABLE: stock_adjustments
+    // ═══════════════════════════════════════
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS stock_adjustments (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            type        TEXT    NOT NULL, -- 'IN' atau 'OUT'
+            quantity    INTEGER NOT NULL,
+            reason      TEXT    NOT NULL, -- 'SALE', 'RESTOCK', 'DAMAGE', 'ADJUSTMENT'
+            notes       TEXT,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 

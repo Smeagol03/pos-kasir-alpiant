@@ -181,6 +181,31 @@ pub async fn create_product(
     match result {
         Ok(res) => {
             let id = res.last_insert_rowid();
+            
+            // Log Stock Adjustment (Initial)
+            if payload.stock > 0 {
+                let session = crate::auth::guard::validate_admin(&state, &session_token)?;
+                crate::commands::activity_cmd::log_stock_adjustment(
+                    &state.db,
+                    id,
+                    session.user_id,
+                    "IN",
+                    payload.stock,
+                    "RESTOCK",
+                    Some("Stok awal saat pembuatan produk"),
+                ).await;
+            }
+
+            // Log Activity
+            let session = crate::auth::guard::validate_admin(&state, &session_token)?;
+            crate::commands::activity_cmd::log_activity(
+                &state.db,
+                Some(session.user_id),
+                "CREATE_PRODUCT",
+                &format!("Membuat produk baru: {}", payload.name),
+                None,
+            ).await;
+
             let new_product = sqlx::query_as::<_, Product>("SELECT * FROM products WHERE id = ?")
                 .bind(id)
                 .fetch_one(&state.db)
@@ -229,6 +254,15 @@ pub async fn update_product(
 
     match result {
         Ok(_) => {
+            let session = crate::auth::guard::validate_admin(&state, &session_token)?;
+            crate::commands::activity_cmd::log_activity(
+                &state.db,
+                Some(session.user_id),
+                "UPDATE_PRODUCT",
+                &format!("Memperbarui produk ID {}: {}", id, payload.name),
+                None,
+            ).await;
+
             let updated = sqlx::query_as::<_, Product>("SELECT * FROM products WHERE id = ?")
                 .bind(id)
                 .fetch_one(&state.db)
@@ -278,6 +312,27 @@ pub async fn adjust_stock(
         .await
         .map_err(|e| e.to_string())?;
 
+    // Log Stock Adjustment
+    let session = crate::auth::guard::validate_admin(&state, &session_token)?;
+    crate::commands::activity_cmd::log_stock_adjustment(
+        &state.db,
+        product_id,
+        session.user_id,
+        if delta > 0 { "IN" } else { "OUT" },
+        delta.abs(),
+        "ADJUSTMENT",
+        None,
+    ).await;
+
+    // Log Activity
+    crate::commands::activity_cmd::log_activity(
+        &state.db,
+        Some(session.user_id),
+        "ADJUST_STOCK",
+        &format!("Menyesuaikan stok produk ID {}: {} (menjadi {})", product_id, delta, new_stock),
+        None,
+    ).await;
+
     Ok(new_stock)
 }
 
@@ -295,6 +350,16 @@ pub async fn delete_product(
         .execute(&state.db)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Log Activity
+    let session = crate::auth::guard::validate_admin(&state, &session_token)?;
+    crate::commands::activity_cmd::log_activity(
+        &state.db,
+        Some(session.user_id),
+        "DELETE_PRODUCT",
+        &format!("Menghapus (soft-delete) produk ID {}", product_id),
+        None,
+    ).await;
 
     Ok(())
 }

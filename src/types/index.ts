@@ -168,6 +168,29 @@ export interface ShiftSummary {
     total_revenue: number;
 }
 
+export interface ActivityLog {
+    id: number;
+    user_id: number | null;
+    user_name: string | null;
+    action: string;
+    description: string;
+    metadata: string | null;
+    created_at: string | null;
+}
+
+export interface StockAdjustment {
+    id: number;
+    product_id: number;
+    product_name: string;
+    user_id: number;
+    user_name: string;
+    type: "IN" | "OUT";
+    quantity: number;
+    reason: string;
+    notes: string | null;
+    created_at: string | null;
+}
+
 export interface AppSettings {
     company: {
         store_name: string;

@@ -89,6 +89,15 @@ pub async fn login(
         user.role.clone(),
     );
 
+    // Log Activity
+    crate::commands::activity_cmd::log_activity(
+        &state.db,
+        Some(user.id),
+        "LOGIN",
+        &format!("User {} berhasil login", user.username),
+        None,
+    ).await;
+
     Ok(LoginResult {
         user: AuthUserData {
             id: user.id,
@@ -107,11 +116,29 @@ pub async fn logout(
     state: tauri::State<'_, AppState>,
     session_token: String,
 ) -> Result<(), String> {
+    // Get user id before destroying session for logging
+    let user_id = if let Ok(session) = crate::auth::guard::validate_session(&state, &session_token) {
+        Some(session.user_id)
+    } else {
+        None
+    };
+
     state
         .sessions
         .lock()
         .map_err(|e| e.to_string())?
         .destroy(&session_token);
+
+    if let Some(id) = user_id {
+        crate::commands::activity_cmd::log_activity(
+            &state.db,
+            Some(id),
+            "LOGOUT",
+            "User melakukan logout",
+            None,
+        ).await;
+    }
+
     Ok(())
 }
 

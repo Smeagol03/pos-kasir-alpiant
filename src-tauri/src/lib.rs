@@ -81,6 +81,9 @@ pub fn run() {
             commands::report_cmd::get_sales_chart,
             commands::report_cmd::get_top_products,
             commands::report_cmd::get_shift_summary,
+            // Activity & Stock Logs
+            commands::activity_cmd::get_activity_logs,
+            commands::activity_cmd::get_stock_history,
             // Settings
             commands::settings_cmd::get_settings,
             commands::settings_cmd::save_settings,

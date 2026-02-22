@@ -5,3 +5,4 @@ pub mod report_cmd;
 pub mod settings_cmd;
 pub mod transaction_cmd;
 pub mod user_cmd;
+pub mod activity_cmd;

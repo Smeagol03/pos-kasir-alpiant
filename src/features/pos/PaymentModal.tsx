@@ -36,8 +36,13 @@ export function PaymentModal({
 
   const { toast } = useToast();
   const sessionToken = useAuthStore((s) => s.sessionToken);
-  const { items, getTotal, discount_id, discount_amount, clearCart } =
-    useCartStore();
+  const { 
+    items, 
+    getTotal, 
+    discount_id, 
+    getDiscountAmount, 
+    clearCart 
+  } = useCartStore();
 
   const total = getTotal();
   const change = Math.max(0, amountPaid - total);
@@ -51,7 +56,11 @@ export function PaymentModal({
   }, [open, total]);
 
   const handlePay = async () => {
-    if (method === "CASH" && amountPaid < total) {
+    // Rounding safety for IDR
+    const roundedTotal = Math.round(total);
+    const roundedAmountPaid = Math.round(amountPaid);
+
+    if (method === "CASH" && roundedAmountPaid < roundedTotal) {
       toast({
         variant: "destructive",
         title: "Jumlah Tidak Valid",
@@ -71,9 +80,9 @@ export function PaymentModal({
           discount_amount: i.discount_amount || 0,
         })),
         discount_id,
-        discount_amount,
+        discount_amount: getDiscountAmount(), // Use calculated amount (handles percentage)
         payment_method: method,
-        amount_paid: method === "CASH" ? amountPaid : total,
+        amount_paid: method === "CASH" ? roundedAmountPaid : roundedTotal,
         notes: "",
       };
 

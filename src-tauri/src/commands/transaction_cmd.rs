@@ -70,18 +70,18 @@ pub async fn create_transaction(
         subtotal_after_discount + tax_amount
     };
 
-    // Bulatkan ke 2 desimal
-    let total_amount = (total_amount * 100.0).round() / 100.0;
-    let tax_amount = (tax_amount * 100.0).round() / 100.0;
+    // Bulatkan ke angka utuh untuk Rupiah (IDR)
+    let total_amount = total_amount.round();
+    let tax_amount = tax_amount.round();
 
     if payload.amount_paid < total_amount {
         return Err(format!(
-            "Uang bayar tidak cukup. Total: {:.0}, Dibayar: {:.0}",
+            "Uang bayar tidak cukup. Total: {}, Dibayar: {}",
             total_amount, payload.amount_paid
         ));
     }
 
-    let change_given = payload.amount_paid - total_amount;
+    let change_given = (payload.amount_paid - total_amount).round();
     let transaction_id = uuid::Uuid::new_v4().to_string();
 
     // ── 6. Mulai DB Transaction ──
@@ -144,9 +144,29 @@ pub async fn create_transaction(
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
+
+        // Log Stock Adjustment (SALE)
+        crate::commands::activity_cmd::log_stock_adjustment(
+            &state.db,
+            item.product_id,
+            session.user_id,
+            "OUT",
+            item.quantity,
+            "SALE",
+            Some(&format!("Penjualan transaksi {}", transaction_id)),
+        ).await;
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Log Activity
+    crate::commands::activity_cmd::log_activity(
+        &state.db,
+        Some(session.user_id),
+        "CREATE_TRANSACTION",
+        &format!("Transaksi baru berhasil: {}", transaction_id),
+        None,
+    ).await;
 
     let saved = sqlx::query_as::<_, Transaction>("SELECT * FROM transactions WHERE id = ?")
         .bind(&transaction_id)
@@ -205,9 +225,30 @@ pub async fn void_transaction(
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
+
+        // Log Stock Adjustment (VOID)
+        crate::commands::activity_cmd::log_stock_adjustment(
+            &state.db,
+            product_id,
+            session.user_id,
+            "IN",
+            qty,
+            "ADJUSTMENT",
+            Some(&format!("Pembatalan (VOID) transaksi {}", transaction_id)),
+        ).await;
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Log Activity
+    crate::commands::activity_cmd::log_activity(
+        &state.db,
+        Some(session.user_id),
+        "VOID_TRANSACTION",
+        &format!("Membatalkan transaksi: {}", transaction_id),
+        None,
+    ).await;
+
     Ok(())
 }
 
@@ -216,13 +257,14 @@ pub async fn void_transaction(
 pub async fn get_transactions(
     state: tauri::State<'_, AppState>,
     session_token: String,
-    date: Option<String>,
+    start_date: Option<String>,
+    end_date: Option<String>,
     page: i64,
 ) -> Result<PaginatedTransactions, String> {
     let session = crate::auth::guard::validate_session(&state, &session_token)?;
     let is_admin = session.role == "ADMIN";
 
-    let mut count_query = "SELECT COUNT(*) FROM transactions WHERE 1=1".to_string();
+    let mut count_query = "SELECT COUNT(*) FROM transactions t WHERE 1=1".to_string();
     let mut data_query = "
         SELECT t.*, u.name as cashier_name
         FROM transactions t
@@ -237,9 +279,8 @@ pub async fn get_transactions(
         data_query.push_str(&condition);
     }
 
-    if let Some(d) = date {
-        // Asumsi format 'YYYY-MM-DD'
-        let condition = format!(" AND date(t.timestamp) = '{}'", d);
+    if let (Some(s), Some(e)) = (start_date, end_date) {
+        let condition = format!(" AND date(t.timestamp) BETWEEN '{}' AND '{}'", s, e);
         count_query.push_str(&condition);
         data_query.push_str(&condition);
     }

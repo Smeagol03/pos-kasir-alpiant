@@ -13,19 +13,25 @@ pub async fn get_financial_summary(
 
     let query = r#"
         SELECT
-            COUNT(id) as transaction_count,
-            COALESCE(SUM(total_amount), 0) as gross_revenue,
-            COALESCE(SUM(tax_amount), 0) as tax_total,
-            COALESCE(SUM(discount_amount), 0) as discount_total,
-            COALESCE(SUM(CASE WHEN payment_method = 'CASH' THEN total_amount ELSE 0 END), 0) as cash_total,
-            COALESCE(SUM(CASE WHEN payment_method = 'DEBIT' THEN total_amount ELSE 0 END), 0) as debit_total,
-            COALESCE(SUM(CASE WHEN payment_method = 'QRIS' THEN total_amount ELSE 0 END), 0) as qris_total
-        FROM transactions
-        WHERE date(timestamp) BETWEEN ? AND ? AND status = 'COMPLETED'
+            CAST(COUNT(t.id) AS INTEGER) as transaction_count,
+            ROUND(COALESCE(SUM(t.total_amount), 0.0)) as gross_revenue,
+            ROUND(COALESCE(SUM(t.tax_amount), 0.0)) as tax_total,
+            ROUND(COALESCE(SUM(t.discount_amount), 0.0) + 
+                  COALESCE((SELECT SUM(ti.discount_amount) 
+                            FROM transaction_items ti 
+                            JOIN transactions t2 ON ti.transaction_id = t2.id 
+                            WHERE date(t2.timestamp) BETWEEN ? AND ? AND t2.status = 'COMPLETED'), 0.0)) as discount_total,
+            ROUND(COALESCE(SUM(CASE WHEN t.payment_method = 'CASH' THEN t.total_amount ELSE 0.0 END), 0.0)) as cash_total,
+            ROUND(COALESCE(SUM(CASE WHEN t.payment_method = 'DEBIT' THEN t.total_amount ELSE 0.0 END), 0.0)) as debit_total,
+            ROUND(COALESCE(SUM(CASE WHEN t.payment_method = 'QRIS' THEN t.total_amount ELSE 0.0 END), 0.0)) as qris_total
+        FROM transactions t
+        WHERE date(t.timestamp) BETWEEN ? AND ? AND t.status = 'COMPLETED'
     "#;
 
     let (trx_count, gross, tax, discount, cash, debit, qris): (i64, f64, f64, f64, f64, f64, f64) =
         sqlx::query_as(query)
+            .bind(&start_date)
+            .bind(&end_date)
             .bind(&start_date)
             .bind(&end_date)
             .fetch_one(&state.db)
@@ -34,18 +40,18 @@ pub async fn get_financial_summary(
 
     let void_query = r#"
         SELECT
-            COUNT(id) as void_count,
-            COALESCE(SUM(total_amount), 0) as void_total
+            CAST(COUNT(id) AS INTEGER) as void_count,
+            ROUND(COALESCE(SUM(total_amount), 0.0)) as void_total
         FROM transactions
         WHERE date(timestamp) BETWEEN ? AND ? AND status = 'VOID'
     "#;
 
     let (void_count, void_total): (i64, f64) = sqlx::query_as(void_query)
-        .bind(&start_date)
-        .bind(&end_date)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| e.to_string())?;
+            .bind(&start_date)
+            .bind(&end_date)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| e.to_string())?;
 
     // Net revenue = Gross revenue - Tax (if tax is NOT included)
     // Actually in accounting, Net Sales = Gross Sales - Discounts - Returns
@@ -141,7 +147,7 @@ pub async fn get_sales_chart(
     let query = r#"
         SELECT
             date(timestamp) as date,
-            COALESCE(SUM(total_amount), 0) as revenue,
+            ROUND(COALESCE(SUM(total_amount), 0.0)) as revenue,
             COUNT(id) as count
         FROM transactions
         WHERE date(timestamp) BETWEEN ? AND ? AND status != 'VOID'
@@ -175,7 +181,7 @@ pub async fn get_top_products(
             p.id as product_id,
             p.name as name,
             SUM(ti.quantity) as total_sold,
-            SUM(ti.subtotal) as total_revenue
+            ROUND(SUM(ti.subtotal)) as total_revenue
         FROM transaction_items ti
         JOIN transactions t ON ti.transaction_id = t.id
         JOIN products p ON ti.product_id = p.id
