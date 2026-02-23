@@ -81,6 +81,7 @@ export function StockAdjust({
                 placeholder="Misal: 5 untuk tambah, -3 untuk kurang"
                 value={deltaStr === "" ? 0 : Number(deltaStr)}
                 onChange={(val: number) => setDeltaStr(val.toString())}
+                allowNegative
               />
               <p className="text-[10px] text-muted-foreground pt-1 leading-tight uppercase font-bold">
                 Angka akan ditambahkan ke stok saat ini. Gunakan angka negatif untuk mengurangi.

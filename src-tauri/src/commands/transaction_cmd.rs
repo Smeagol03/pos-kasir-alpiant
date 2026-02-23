@@ -263,12 +263,15 @@ pub async fn get_transactions(
     session_token: String,
     start_date: Option<String>,
     end_date: Option<String>,
+    search: Option<String>,
     page: i64,
 ) -> Result<PaginatedTransactions, String> {
     let session = crate::auth::guard::validate_session(&state, &session_token)?;
     let is_admin = session.role == "ADMIN";
 
-    let mut count_query = "SELECT COUNT(*) FROM transactions t WHERE 1=1".to_string();
+    let mut count_query = "SELECT COUNT(*) FROM transactions t 
+                           LEFT JOIN users u ON t.cashier_id = u.id 
+                           WHERE 1=1".to_string();
     let mut data_query = "
         SELECT t.*, u.name as cashier_name
         FROM transactions t
@@ -278,7 +281,7 @@ pub async fn get_transactions(
     .to_string();
 
     if !is_admin {
-        let condition = format!(" AND cashier_id = {}", session.user_id);
+        let condition = format!(" AND t.cashier_id = {}", session.user_id);
         count_query.push_str(&condition);
         data_query.push_str(&condition);
     }
@@ -287,6 +290,18 @@ pub async fn get_transactions(
         let condition = format!(" AND date(t.timestamp) BETWEEN '{}' AND '{}'", s, e);
         count_query.push_str(&condition);
         data_query.push_str(&condition);
+    }
+
+    if let Some(s) = search {
+        if !s.is_empty() {
+            let condition = format!(
+                " AND (t.id LIKE '%{}%' OR u.name LIKE '%{}%')",
+                s.replace("'", "''"),
+                s.replace("'", "''")
+            );
+            count_query.push_str(&condition);
+            data_query.push_str(&condition);
+        }
     }
 
     let total: (i64,) = sqlx::query_as(&count_query)

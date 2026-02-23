@@ -7,10 +7,11 @@ interface NumericInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElem
   onChange: (value: number) => void;
   prefix?: string;
   suffix?: string;
+  allowNegative?: boolean;
 }
 
 export const NumericInput = React.forwardRef<HTMLInputElement, NumericInputProps>(
-  ({ value, onChange, className, prefix, suffix, ...props }, ref) => {
+  ({ value, onChange, className, prefix, suffix, allowNegative = false, ...props }, ref) => {
     // Format number to string with dots as thousand separators
     const formatDisplay = (val: number): string => {
       if (val === 0) return "0";
@@ -21,17 +22,33 @@ export const NumericInput = React.forwardRef<HTMLInputElement, NumericInputProps
 
     // Update display value when prop value changes externally
     React.useEffect(() => {
+      // Don't update if we are in the middle of typing a negative sign
+      if (displayValue === "-" && value === 0) return;
       setDisplayValue(formatDisplay(value));
     }, [value]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const rawValue = e.target.value.replace(/\D/g, ""); // Remove non-digits
+      const val = e.target.value;
       
-      // Handle leading zero: if it was 0 and we type a number, replace the 0
-      const numericValue = rawValue === "" ? 0 : parseInt(rawValue, 10);
+      // Check if it's negative (only if allowed and starts with -)
+      const isNegative = allowNegative && val.startsWith("-");
       
-      setDisplayValue(formatDisplay(numericValue));
-      onChange(numericValue);
+      // Remove all non-digits
+      const digits = val.replace(/\D/g, "");
+      
+      // Handle the case where only "-" is typed
+      if (val === "-" && allowNegative) {
+        setDisplayValue("-");
+        onChange(0);
+        return;
+      }
+
+      // Handle leading zero or empty
+      const numericValue = digits === "" ? 0 : parseInt(digits, 10);
+      const finalValue = isNegative ? -numericValue : numericValue;
+      
+      setDisplayValue(formatDisplay(finalValue));
+      onChange(finalValue);
     };
 
     return (
@@ -45,7 +62,7 @@ export const NumericInput = React.forwardRef<HTMLInputElement, NumericInputProps
           {...props}
           ref={ref}
           type="text"
-          inputMode="numeric"
+          inputMode={allowNegative ? "text" : "numeric"}
           className={cn(
             className,
             prefix && "pl-10",
