@@ -20,6 +20,7 @@ import { useAuthStore } from "../../store/authStore";
 import { useToast } from "../../hooks/use-toast";
 import { Banknote, CreditCard, QrCode } from "lucide-react";
 import { NumericInput } from "../../components/NumericInput";
+import { QRISModal } from "./QRISModal";
 
 export function PaymentModal({
   open,
@@ -33,16 +34,12 @@ export function PaymentModal({
   const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [amountPaid, setAmountPaid] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [showQrisModal, setShowQrisModal] = useState(false);
 
   const { toast } = useToast();
   const sessionToken = useAuthStore((s) => s.sessionToken);
-  const { 
-    items, 
-    getTotal, 
-    discount_id, 
-    getDiscountAmount, 
-    clearCart 
-  } = useCartStore();
+  const { items, getTotal, discount_id, getDiscountAmount, clearCart } =
+    useCartStore();
 
   const total = getTotal();
   const change = Math.max(0, amountPaid - total);
@@ -55,11 +52,55 @@ export function PaymentModal({
     }
   }, [open, total]);
 
+  const handleQrisSuccess = async (orderId: string) => {
+    setShowQrisModal(false);
+    setLoading(true);
+    try {
+      const payload: CreateTransactionPayload = {
+        items: items.map((i) => ({
+          product_id: i.product_id,
+          quantity: i.quantity,
+          price_at_time: i.price,
+          discount_amount: i.discount_amount || 0,
+        })),
+        discount_id,
+        discount_amount: getDiscountAmount(),
+        payment_method: "QRIS",
+        amount_paid: Math.round(total),
+        notes: `QRIS Order: ${orderId}`,
+      };
+
+      const transaction = await invoke<Transaction>("create_transaction", {
+        sessionToken,
+        payload,
+      });
+
+      clearCart();
+      onSuccess(transaction);
+      onOpenChange(false);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Transaksi Gagal",
+        description: String(error),
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handlePay = async () => {
     // Rounding safety for IDR
     const roundedTotal = Math.round(total);
     const roundedAmountPaid = Math.round(amountPaid);
 
+    // Intercept QRIS payment → buka modal khusus
+    if (method === "QRIS") {
+      setShowQrisModal(true);
+      return;
+    }
+
+    // Validasi CASH: uang yang dibayarkan harus >= total
     if (method === "CASH" && roundedAmountPaid < roundedTotal) {
       toast({
         variant: "destructive",
@@ -106,126 +147,142 @@ export function PaymentModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Selesaikan Pembayaran</DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Selesaikan Pembayaran</DialogTitle>
+          </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Left Column: Summary & Method */}
-          <div className="space-y-6">
-            <div className="bg-primary/10 p-6 rounded-lg border border-primary/20 text-center">
-              <div className="text-sm font-medium text-muted-foreground mb-1">
-                Total Tagihan
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Left Column: Summary & Method */}
+            <div className="space-y-6">
+              <div className="bg-primary/10 p-6 rounded-lg border border-primary/20 text-center">
+                <div className="text-sm font-medium text-muted-foreground mb-1">
+                  Total Tagihan
+                </div>
+                <div className="text-4xl font-black text-primary">
+                  {formatRupiah(total)}
+                </div>
               </div>
-              <div className="text-4xl font-black text-primary">
-                {formatRupiah(total)}
+
+              <div className="space-y-3">
+                <div className="text-sm font-medium">Metode Pembayaran</div>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    variant={method === "CASH" ? "default" : "outline"}
+                    className="h-16 flex flex-col items-center justify-center gap-1"
+                    onClick={() => setMethod("CASH")}
+                  >
+                    <Banknote className="h-5 w-5" />
+                    <span>Tunai</span>
+                  </Button>
+                  <Button
+                    variant={method === "DEBIT" ? "default" : "outline"}
+                    className="h-16 flex flex-col items-center justify-center gap-1"
+                    onClick={() => {
+                      setMethod("DEBIT");
+                      setAmountPaid(total);
+                    }}
+                  >
+                    <CreditCard className="h-5 w-5" />
+                    <span>Debit</span>
+                  </Button>
+                  <Button
+                    variant={method === "QRIS" ? "default" : "outline"}
+                    className="h-16 flex flex-col items-center justify-center gap-1"
+                    onClick={() => {
+                      setMethod("QRIS");
+                      setAmountPaid(total);
+                    }}
+                  >
+                    <QrCode className="h-5 w-5" />
+                    <span>QRIS</span>
+                  </Button>
+                </div>
               </div>
+
+              {method === "CASH" && (
+                <div className="bg-muted/50 p-4 rounded-lg flex justify-between items-center text-lg">
+                  <span className="font-medium">Kembalian:</span>
+                  <span
+                    className={`font-bold ${change > 0 ? "text-emerald-500" : ""}`}
+                  >
+                    {formatRupiah(change)}
+                  </span>
+                </div>
+              )}
             </div>
 
-            <div className="space-y-3">
-              <div className="text-sm font-medium">Metode Pembayaran</div>
-              <div className="grid grid-cols-3 gap-2">
-                <Button
-                  variant={method === "CASH" ? "default" : "outline"}
-                  className="h-16 flex flex-col items-center justify-center gap-1"
-                  onClick={() => setMethod("CASH")}
-                >
-                  <Banknote className="h-5 w-5" />
-                  <span>Tunai</span>
-                </Button>
-                <Button
-                  variant={method === "DEBIT" ? "default" : "outline"}
-                  className="h-16 flex flex-col items-center justify-center gap-1"
-                  onClick={() => {
-                    setMethod("DEBIT");
-                    setAmountPaid(total);
+            {/* Right Column: Keypad (only for cash) */}
+            <div className="border border-border rounded-lg p-4 bg-card shadow-sm">
+              <div className="mb-4">
+                <div className="text-sm text-muted-foreground mb-1">
+                  Uang Diberikan
+                </div>
+                <NumericInput
+                  autoFocus
+                  className={`text-right text-3xl font-mono h-14 p-3 rounded-md border bg-background ${method !== "CASH" ? "opacity-50" : ""}`}
+                  value={method !== "CASH" ? total : amountPaid}
+                  disabled={method !== "CASH"}
+                  onChange={(val) => setAmountPaid(val)}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "Enter" &&
+                      !loading &&
+                      method === "CASH" &&
+                      amountPaid >= total
+                    ) {
+                      handlePay();
+                    }
                   }}
-                >
-                  <CreditCard className="h-5 w-5" />
-                  <span>Debit</span>
-                </Button>
-                <Button
-                  variant={method === "QRIS" ? "default" : "outline"}
-                  className="h-16 flex flex-col items-center justify-center gap-1"
-                  onClick={() => {
-                    setMethod("QRIS");
-                    setAmountPaid(total);
-                  }}
-                >
-                  <QrCode className="h-5 w-5" />
-                  <span>QRIS</span>
-                </Button>
+                  prefix="Rp"
+                  placeholder={formatRupiah(total)}
+                />
               </div>
-            </div>
 
-            {method === "CASH" && (
-              <div className="bg-muted/50 p-4 rounded-lg flex justify-between items-center text-lg">
-                <span className="font-medium">Kembalian:</span>
-                <span
-                  className={`font-bold ${change > 0 ? "text-emerald-500" : ""}`}
-                >
-                  {formatRupiah(change)}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Right Column: Keypad (only for cash) */}
-          <div className="border border-border rounded-lg p-4 bg-card shadow-sm">
-            <div className="mb-4">
-              <div className="text-sm text-muted-foreground mb-1">
-                Uang Diberikan
-              </div>
-              <NumericInput
-                autoFocus
-                className={`text-right text-3xl font-mono h-14 p-3 rounded-md border bg-background ${method !== "CASH" ? "opacity-50" : ""}`}
-                value={method !== "CASH" ? total : amountPaid}
-                disabled={method !== "CASH"}
-                onChange={(val) => setAmountPaid(val)}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === "Enter" &&
-                    !loading &&
-                    method === "CASH" &&
-                    amountPaid >= total
-                  ) {
-                    handlePay();
+              <div
+                className={
+                  method !== "CASH" ? "opacity-50 pointer-events-none" : ""
+                }
+              >
+                <NumpadInput
+                  value={
+                    amountPaid === 0 && method === "CASH"
+                      ? ""
+                      : amountPaid.toString()
                   }
-                }}
-                prefix="Rp"
-                placeholder={formatRupiah(total)}
-              />
-            </div>
-
-            <div
-              className={
-                method !== "CASH" ? "opacity-50 pointer-events-none" : ""
-              }
-            >
-              <NumpadInput
-                value={amountPaid === 0 && method === "CASH" ? "" : amountPaid.toString()}
-                onChange={(v) => setAmountPaid(Number(v) || 0)}
-              />
+                  onChange={(v) => setAmountPaid(Number(v) || 0)}
+                />
+              </div>
             </div>
           </div>
-        </div>
 
-        <DialogFooter className="mt-6 border-t pt-4">
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Batal
-          </Button>
-          <Button
-            size="lg"
-            className="w-40 text-lg"
-            onClick={handlePay}
-            disabled={loading || (method === "CASH" && amountPaid < total)}
-          >
-            {loading ? "Memproses..." : "Konfirmasi"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter className="mt-6 border-t pt-4">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              Batal
+            </Button>
+            <Button
+              size="lg"
+              className="w-40 text-lg"
+              onClick={handlePay}
+              disabled={loading || (method === "CASH" && amountPaid < total)}
+            >
+              {loading ? "Memproses..." : "Konfirmasi"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <QRISModal
+        open={showQrisModal}
+        onOpenChange={setShowQrisModal}
+        amount={Math.round(total)}
+        onSuccess={handleQrisSuccess}
+        onCancel={() => {
+          setShowQrisModal(false);
+          setMethod("CASH");
+        }}
+      />
+    </>
   );
 }

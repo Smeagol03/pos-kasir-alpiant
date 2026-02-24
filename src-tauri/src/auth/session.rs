@@ -59,6 +59,11 @@ impl SessionStore {
         Ok(s)
     }
 
+    /// Get session data by token (without validation).
+    pub fn get(&self, token: &str) -> Option<&SessionData> {
+        self.sessions.get(token)
+    }
+
     /// Hapus sesi (logout).
     pub fn destroy(&mut self, token: &str) {
         self.sessions.remove(token);

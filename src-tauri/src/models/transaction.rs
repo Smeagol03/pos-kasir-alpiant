@@ -16,6 +16,8 @@ pub struct Transaction {
     pub voided_by: Option<i64>,
     pub voided_at: Option<String>,
     pub notes: Option<String>,
+    pub qris_reference: Option<String>,
+    pub payment_status: Option<String>,
 }
 
 /// Transaction dengan nama kasir (JOIN result).
@@ -36,6 +38,8 @@ pub struct TransactionWithCashier {
     pub voided_by: Option<i64>,
     pub voided_at: Option<String>,
     pub notes: Option<String>,
+    pub qris_reference: Option<String>,
+    pub payment_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]

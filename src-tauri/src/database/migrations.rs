@@ -271,6 +271,33 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     // Drop constraint lama dan ganti dengan partial unique indexes
     fix_unique_constraints(pool).await?;
 
+    // ═══════════════════════════════════════
+    // MIGRASI: QRIS Payment Tracking
+    // ═══════════════════════════════════════
+
+    // Tambah kolom ke transactions table
+    safe_add_column(pool, "transactions", "qris_reference", "TEXT").await;
+    safe_add_column(pool, "transactions", "payment_status", "TEXT DEFAULT 'COMPLETED'").await;
+
+    // Tabel baru: tracking QRIS payments
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS qris_payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id TEXT NOT NULL UNIQUE,
+            amount REAL NOT NULL,
+            qr_string TEXT,
+            status TEXT NOT NULL DEFAULT 'PENDING'
+                CHECK(status IN ('PENDING', 'SETTLED', 'EXPIRED', 'CANCELLED')),
+            transaction_id TEXT,
+            expires_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            settled_at DATETIME,
+            FOREIGN KEY (transaction_id) REFERENCES transactions(id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 

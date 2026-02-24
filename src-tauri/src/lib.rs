@@ -3,6 +3,9 @@ pub mod commands;
 pub mod database;
 pub mod errors;
 pub mod models;
+pub mod encryption;
+pub mod audit;
+pub mod rate_limiter;
 
 use auth::session::SessionStore;
 use std::sync::Mutex;
@@ -96,6 +99,13 @@ pub fn run() {
             commands::settings_cmd::list_serial_ports,
             commands::settings_cmd::print_receipt,
             commands::settings_cmd::test_print,
+            // Payment QRIS
+            commands::payment_cmd::generate_qris_payment,
+            commands::payment_cmd::check_qris_status,
+            commands::payment_cmd::cancel_qris_payment,
+            commands::payment_cmd::save_payment_config,
+            commands::payment_cmd::get_payment_config,
+            commands::payment_cmd::test_payment_connection,
         ])
         .run(tauri::generate_context!())
         .expect("Gagal menjalankan aplikasi");

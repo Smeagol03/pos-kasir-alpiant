@@ -250,3 +250,24 @@ export interface BulkImportResult {
     error_count: number;
     errors: string[];
 }
+
+// === QRIS Payment Types ===
+
+export type QrisPaymentStatus =
+    | "PENDING"
+    | "COMPLETED"
+    | "FAILED"
+    | "EXPIRED"
+    | "CANCELLED";
+
+export interface QrisPaymentResponse {
+    qr_string: string;
+    order_id: string;
+    expires_at: string;
+}
+
+export interface QrisStatusResponse {
+    status: string; // "pending" | "settlement" | "expire" | "cancel"
+    transaction_status: string;
+    order_id: string;
+}

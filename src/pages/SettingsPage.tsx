@@ -34,9 +34,11 @@ import {
   CheckCircle,
   Tag,
   User as UserIcon,
+  CreditCard,
 } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 import { DiscountSettings } from "../features/settings/DiscountSettings";
+import { PaymentSettings } from "../features/settings/PaymentSettings";
 import { NumericInput } from "../components/NumericInput";
 import { invoke } from "../lib/tauri";
 
@@ -162,7 +164,7 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="company" className="w-full">
-        <TabsList className="grid w-full grid-cols-6 mb-4">
+        <TabsList className="grid w-full grid-cols-7 mb-4">
           <TabsTrigger value="company">
             <Store className="h-4 w-4 mr-2" /> Store
           </TabsTrigger>
@@ -180,6 +182,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="hardware">
             <Printer className="h-4 w-4 mr-2" /> Hardware
+          </TabsTrigger>
+          <TabsTrigger value="payment">
+            <CreditCard className="h-4 w-4 mr-2" /> Payment
           </TabsTrigger>
         </TabsList>
 
@@ -466,6 +471,10 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="payment">
+          <PaymentSettings />
         </TabsContent>
       </Tabs>
     </div>

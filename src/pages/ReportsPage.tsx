@@ -8,8 +8,16 @@ import { TransactionHistory } from "../features/reports/TransactionHistory";
 import { AuditTrail } from "../features/reports/AuditTrail";
 import { StockRestockHistory } from "../features/reports/StockRestockHistory";
 import { Button } from "../components/ui/button";
-import { FileText, Download, Filter, BarChart3, History, PackageSearch } from "lucide-react";
+import {
+  BarChart3,
+  Download,
+  History,
+  PackageSearch,
+  ShieldCheck,
+  CalendarDays,
+} from "lucide-react";
 import { format, subDays, startOfMonth, startOfYesterday } from "date-fns";
+import { id as localeId } from "date-fns/locale";
 import { useAuthStore } from "../store/authStore";
 import { invoke } from "../lib/tauri";
 import { FinancialSummary, ProductStat, PaginatedTransactions } from "../types";
@@ -23,7 +31,12 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Input } from "../components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../components/ui/tabs";
 
 export default function ReportsPage() {
   const [dateRange, setDateRange] = useState({
@@ -58,10 +71,11 @@ export default function ReportsPage() {
       case "thisMonth":
         start = startOfMonth(end);
         break;
-      case "lastMonth":
+      case "lastMonth": {
         const lastMonth = subDays(startOfMonth(end), 1);
         start = startOfMonth(lastMonth);
         break;
+      }
     }
 
     setDateRange({
@@ -70,31 +84,42 @@ export default function ReportsPage() {
     });
   };
 
+  // Human-readable date range
+  const formatDateDisplay = () => {
+    try {
+      const s = new Date(dateRange.start);
+      const e = new Date(dateRange.end);
+      return `${format(s, "d MMM", { locale: localeId })} – ${format(e, "d MMM yyyy", { locale: localeId })}`;
+    } catch {
+      return `${dateRange.start} – ${dateRange.end}`;
+    }
+  };
+
   const exportToCSV = async () => {
     setIsExporting(true);
     try {
       const [summary, topProducts, allTransactions] = await Promise.all([
-        invoke<FinancialSummary>("get_financial_summary", { 
-          sessionToken, 
-          startDate: dateRange.start, 
-          endDate: dateRange.end 
-        }),
-        invoke<ProductStat[]>("get_top_products", { 
-          sessionToken, 
-          startDate: dateRange.start, 
+        invoke<FinancialSummary>("get_financial_summary", {
+          sessionToken,
+          startDate: dateRange.start,
           endDate: dateRange.end,
-          limit: 500
+        }),
+        invoke<ProductStat[]>("get_top_products", {
+          sessionToken,
+          startDate: dateRange.start,
+          endDate: dateRange.end,
+          limit: 500,
         }),
         invoke<PaginatedTransactions>("get_transactions", {
           sessionToken,
           startDate: dateRange.start,
           endDate: dateRange.end,
-          page: 1 
-        })
+          page: 1,
+        }),
       ]);
 
       const combinedData = [
-        ["LAPORAN KEUANGAN KASIR PRO"],
+        ["LAPORAN KEUANGAN POS KASIR"],
         ["Periode", `${dateRange.start} s/d ${dateRange.end}`],
         ["Waktu Export", format(new Date(), "yyyy-MM-dd HH:mm:ss")],
         [],
@@ -112,28 +137,32 @@ export default function ReportsPage() {
         [],
         ["--- DAFTAR TRANSAKSI ---"],
         ["WAKTU", "ID TRANSAKSI", "KASIR", "METODE", "TOTAL", "STATUS"],
-        ...allTransactions.data.map(t => [
-          t.timestamp, 
-          t.id, 
-          t.cashier_name, 
-          t.payment_method, 
-          Math.round(t.total_amount), 
-          t.status
+        ...allTransactions.data.map((t) => [
+          t.timestamp,
+          t.id,
+          t.cashier_name,
+          t.payment_method,
+          Math.round(t.total_amount),
+          t.status,
         ]),
         [],
         ["--- PRODUK TERLARIS ---"],
         ["Nama Produk", "Jumlah Terjual", "Total Omzet"],
-        ...topProducts.map(p => [p.name, p.total_sold, Math.round(p.total_revenue)])
+        ...topProducts.map((p) => [
+          p.name,
+          p.total_sold,
+          Math.round(p.total_revenue),
+        ]),
       ];
 
       const ws = XLSX.utils.aoa_to_sheet(combinedData);
       const csvContent = XLSX.utils.sheet_to_csv(ws);
-      
+
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       const url = URL.createObjectURL(blob);
       const fileName = `Laporan_${dateRange.start}_${dateRange.end}.csv`;
-      
+
       link.setAttribute("href", url);
       link.setAttribute("download", fileName);
       link.style.visibility = "hidden";
@@ -143,7 +172,7 @@ export default function ReportsPage() {
 
       toast({
         title: "Export CSV Berhasil",
-        description: `Laporan telah disimpan sebagai ${fileName}`,
+        description: `Laporan disimpan: ${fileName}`,
       });
     } catch (error) {
       toast({
@@ -157,23 +186,26 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto h-full flex flex-col bg-slate-50/30 dark:bg-transparent overflow-hidden">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 shrink-0">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-primary">
-            <FileText className="h-6 w-6" />
-            <h1 className="text-3xl font-black tracking-tight uppercase text-slate-900 dark:text-white">Analytics & Laporan</h1>
+    <div className="p-6 max-w-7xl mx-auto h-full flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 shrink-0 mb-5">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            Laporan & Analitik
+          </h1>
+          <div className="flex items-center gap-2 mt-1">
+            <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">
+              {formatDateDisplay()}
+            </span>
           </div>
-          <p className="text-muted-foreground font-medium text-sm">
-            Pantau performa bisnis, audit stok, dan riwayat aktivitas sistem.
-          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1.5 rounded-xl border shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Period Selector */}
+          <div className="flex items-center gap-2 bg-muted/40 p-1 rounded-lg border border-border/50">
             <Select value={rangeLabel} onValueChange={handleRangeChange}>
-              <SelectTrigger className="w-[140px] border-0 focus:ring-0 h-8 text-xs font-bold uppercase">
-                <Filter className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+              <SelectTrigger className="w-[130px] border-0 bg-transparent focus:ring-0 h-8 text-xs font-medium">
                 <SelectValue placeholder="Periode" />
               </SelectTrigger>
               <SelectContent>
@@ -183,92 +215,120 @@ export default function ReportsPage() {
                 <SelectItem value="30d">30 Hari</SelectItem>
                 <SelectItem value="thisMonth">Bulan Ini</SelectItem>
                 <SelectItem value="lastMonth">Bulan Lalu</SelectItem>
-                <SelectItem value="custom">Kustom Tanggal</SelectItem>
+                <SelectItem value="custom">Kustom</SelectItem>
               </SelectContent>
             </Select>
 
             {rangeLabel === "custom" && (
-              <div className="flex items-center gap-2 px-2 border-l ml-1">
-                <Input 
-                  type="date" 
-                  className="h-8 w-32 text-[10px] border-0 focus-visible:ring-0 p-0" 
+              <div className="flex items-center gap-1.5 border-l border-border/50 pl-2">
+                <Input
+                  type="date"
+                  className="h-7 w-[120px] text-[11px] border-0 bg-transparent p-0"
                   value={dateRange.start}
-                  onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                  onChange={(e) =>
+                    setDateRange({ ...dateRange, start: e.target.value })
+                  }
                 />
-                <span className="text-muted-foreground text-[10px] font-bold">S/D</span>
-                <Input 
-                  type="date" 
-                  className="h-8 w-32 text-[10px] border-0 focus-visible:ring-0 p-0" 
+                <span className="text-[10px] text-muted-foreground">—</span>
+                <Input
+                  type="date"
+                  className="h-7 w-[120px] text-[11px] border-0 bg-transparent p-0"
                   value={dateRange.end}
-                  onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                  onChange={(e) =>
+                    setDateRange({ ...dateRange, end: e.target.value })
+                  }
                 />
               </div>
             )}
           </div>
 
-          <Button 
-            onClick={exportToCSV} 
+          <Button
+            onClick={exportToCSV}
             disabled={isExporting}
-            className="bg-slate-900 dark:bg-white dark:text-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl h-11"
+            variant="outline"
+            size="sm"
+            className="h-10 text-xs font-medium"
           >
             {isExporting ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+              <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-foreground mr-1.5" />
             ) : (
-              <Download className="h-4 w-4 mr-2" />
+              <Download className="h-3.5 w-3.5 mr-1.5" />
             )}
-            EXPORT CSV
+            Export CSV
           </Button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0 mt-6 pr-1">
-        <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="bg-white dark:bg-slate-900 p-1 rounded-xl border shadow-sm shrink-0">
-            <TabsTrigger value="overview" className="rounded-lg px-6 gap-2 font-bold text-xs uppercase transition-all">
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <Tabs defaultValue="overview" className="space-y-5">
+          <TabsList className="bg-muted/40 p-1 rounded-lg border border-border/50 shrink-0">
+            <TabsTrigger
+              value="overview"
+              className="rounded-md px-4 gap-1.5 text-xs font-medium"
+            >
               <BarChart3 className="h-3.5 w-3.5" /> Ringkasan
             </TabsTrigger>
-            <TabsTrigger value="history" className="rounded-lg px-6 gap-2 font-bold text-xs uppercase transition-all">
+            <TabsTrigger
+              value="history"
+              className="rounded-md px-4 gap-1.5 text-xs font-medium"
+            >
               <History className="h-3.5 w-3.5" /> Transaksi
             </TabsTrigger>
-            <TabsTrigger value="inventory" className="rounded-lg px-6 gap-2 font-bold text-xs uppercase transition-all">
+            <TabsTrigger
+              value="inventory"
+              className="rounded-md px-4 gap-1.5 text-xs font-medium"
+            >
               <PackageSearch className="h-3.5 w-3.5" /> Audit Stok
             </TabsTrigger>
-            <TabsTrigger value="audit" className="rounded-lg px-6 gap-2 font-bold text-xs uppercase transition-all">
-              <History className="h-3.5 w-3.5" /> Log Aktivitas
+            <TabsTrigger
+              value="audit"
+              className="rounded-md px-4 gap-1.5 text-xs font-medium"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" /> Log Aktivitas
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" className="space-y-6 mt-0">
-            {/* Row 1: Shift Summary - 3 cards */}
+          <TabsContent value="overview" className="space-y-5 mt-0">
+            {/* Shift Summary */}
             <ShiftSummary />
 
-            {/* Row 2: Financial Summary Cards - 5 cards */}
+            {/* Financial KPIs + Breakdown */}
             <FinancialSummaryCards
               startDate={dateRange.start}
               endDate={dateRange.end}
             />
 
-            {/* Row 3: Main Charts - Bento Grid Layout */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Sales Chart - Spans 2 columns on large screens */}
+            {/* Charts Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="lg:col-span-2">
-                <SalesChart startDate={dateRange.start} endDate={dateRange.end} />
+                <SalesChart
+                  startDate={dateRange.start}
+                  endDate={dateRange.end}
+                />
               </div>
-
-              {/* Payment Methods Chart - 1 column */}
               <div>
-                <PaymentMethodsChart startDate={dateRange.start} endDate={dateRange.end} />
+                <PaymentMethodsChart
+                  startDate={dateRange.start}
+                  endDate={dateRange.end}
+                />
               </div>
             </div>
 
-            {/* Row 4: Top Products - Full width */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <TopProducts startDate={dateRange.start} endDate={dateRange.end} />
+            {/* Top Products */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <TopProducts
+                startDate={dateRange.start}
+                endDate={dateRange.end}
+              />
             </div>
           </TabsContent>
 
           <TabsContent value="history" className="mt-0">
-            <TransactionHistory startDate={dateRange.start} endDate={dateRange.end} />
+            <TransactionHistory
+              startDate={dateRange.start}
+              endDate={dateRange.end}
+            />
           </TabsContent>
 
           <TabsContent value="inventory" className="mt-0">
