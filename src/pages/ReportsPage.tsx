@@ -239,19 +239,31 @@ export default function ReportsPage() {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6 mt-0">
+            {/* Row 1: Shift Summary - 3 cards */}
             <ShiftSummary />
-            <FinancialSummaryCards 
-              startDate={dateRange.start} 
-              endDate={dateRange.end} 
+
+            {/* Row 2: Financial Summary Cards - 5 cards */}
+            <FinancialSummaryCards
+              startDate={dateRange.start}
+              endDate={dateRange.end}
             />
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
+
+            {/* Row 3: Main Charts - Bento Grid Layout */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/* Sales Chart - Spans 2 columns on large screens */}
+              <div className="lg:col-span-2">
                 <SalesChart startDate={dateRange.start} endDate={dateRange.end} />
               </div>
-              <div className="space-y-6">
+
+              {/* Payment Methods Chart - 1 column */}
+              <div>
                 <PaymentMethodsChart startDate={dateRange.start} endDate={dateRange.end} />
-                <TopProducts startDate={dateRange.start} endDate={dateRange.end} />
               </div>
+            </div>
+
+            {/* Row 4: Top Products - Full width */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <TopProducts startDate={dateRange.start} endDate={dateRange.end} />
             </div>
           </TabsContent>
 

@@ -6,7 +6,7 @@ import { useCartStore } from "../../store/cartStore";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
-import { Search, PackageX } from "lucide-react";
+import { Search, PackageX, Sparkles, TrendingUp, Plus } from "lucide-react";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { formatRupiah } from "../../lib/currency";
 
@@ -21,42 +21,47 @@ function ProductImage({ product, hasImage, getProductColor, getProductInitial }:
   const [imageError, setImageError] = useState(false);
   const [imgSrc, setImgSrc] = useState<string>("");
   const [imageKey, setImageKey] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
   const { invoke } = useInvoke();
   const sessionToken = useAuthStore((s) => s.sessionToken);
-
-  // Debug log
-  useEffect(() => {
-    console.log(`ProductImage: id=${product.id}, hasImage=${hasImage}, image_path=${product.image_path}`);
-  }, [product.id, hasImage, product.image_path]);
 
   // Reset image state when product changes
   useEffect(() => {
     setImageError(false);
     setImageKey((prev) => prev + 1);
     setImgSrc("");
+    setIsLoading(false);
   }, [product.id]);
 
   // Load image as base64
   useEffect(() => {
     if (hasImage && product.image_path && sessionToken) {
+      setIsLoading(true);
       invoke<string>("get_product_image", {
         sessionToken,
         productId: product.id,
       })
         .then((base64Data) => {
-          console.log(`ProductImage: Loaded image for product ${product.id}`);
           setImgSrc(base64Data);
         })
-        .catch((err) => {
-          console.error(`ProductImage: Failed to load image: ${err}`);
+        .catch(() => {
           setImageError(true);
-        });
+        })
+        .finally(() => setIsLoading(false));
     }
   }, [hasImage, product.image_path, product.id, sessionToken, imageKey]);
 
+  if (isLoading) {
+    return (
+      <div className="h-24 w-full bg-muted/30 flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-muted-foreground/20 border-t-primary rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   if (hasImage && !imageError && imgSrc) {
     return (
-      <div className="h-24 w-full overflow-hidden bg-muted">
+      <div className="h-24 w-full bg-muted/20">
         <img
           key={imageKey}
           src={imgSrc}
@@ -69,9 +74,7 @@ function ProductImage({ product, hasImage, getProductColor, getProductInitial }:
   }
 
   return (
-    <div
-      className={`h-24 flex items-center justify-center font-bold text-3xl tracking-tight shadow-inner ${getProductColor(product.name)}`}
-    >
+    <div className={`h-24 w-full flex items-center justify-center font-bold text-xl ${getProductColor(product.name)}`}>
       {getProductInitial(product.name)}
     </div>
   );
@@ -118,26 +121,34 @@ export function ProductGrid() {
   const getStockStatus = (stock: number) => {
     if (stock <= 0)
       return {
-        bg: "bg-destructive/10",
-        text: "text-destructive",
+        bg: "bg-red-500/10",
+        text: "text-red-500",
         label: "Habis",
+        dot: "bg-red-500",
+        progress: 0,
       };
     if (stock < 10)
       return {
-        bg: "bg-orange-500/10",
-        text: "text-orange-600 dark:text-orange-400",
+        bg: "bg-amber-500/10",
+        text: "text-amber-500",
         label: `Sisa ${stock}`,
+        dot: "bg-amber-500",
+        progress: Math.min((stock / 10) * 100, 100),
       };
     if (stock < 50)
       return {
-        bg: "bg-blue-500/10",
-        text: "text-blue-600 dark:text-blue-400",
-        label: `Sisa ${stock}`,
+        bg: "bg-sky-500/10",
+        text: "text-sky-500",
+        label: `Stok ${stock}`,
+        dot: "bg-sky-500",
+        progress: Math.min((stock / 50) * 100, 100),
       };
     return {
       bg: "bg-emerald-500/10",
-      text: "text-emerald-600 dark:text-emerald-400",
+      text: "text-emerald-500",
       label: `Stok ${stock}`,
+      dot: "bg-emerald-500",
+      progress: 100,
     };
   };
 
@@ -152,12 +163,14 @@ export function ProductGrid() {
 
   const getProductColor = (name: string) => {
     const gradients = [
-      "bg-gradient-to-br from-red-500 to-rose-600 text-white",
-      "bg-gradient-to-br from-blue-500 to-indigo-600 text-white",
-      "bg-gradient-to-br from-emerald-400 to-teal-600 text-white",
-      "bg-gradient-to-br from-amber-400 to-orange-500 text-white",
-      "bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white",
-      "bg-gradient-to-br from-cyan-400 to-blue-500 text-white",
+      "bg-gradient-to-br from-rose-400 via-pink-500 to-fuchsia-600 text-white",
+      "bg-gradient-to-br from-blue-400 via-indigo-500 to-violet-600 text-white",
+      "bg-gradient-to-br from-emerald-400 via-teal-500 to-cyan-600 text-white",
+      "bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 text-white",
+      "bg-gradient-to-br from-violet-400 via-purple-500 to-indigo-600 text-white",
+      "bg-gradient-to-br from-cyan-400 via-sky-500 to-blue-600 text-white",
+      "bg-gradient-to-br from-lime-400 via-green-500 to-emerald-600 text-white",
+      "bg-gradient-to-br from-fuchsia-400 via-pink-500 to-rose-600 text-white",
     ];
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
@@ -167,25 +180,40 @@ export function ProductGrid() {
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4 bg-background">
-      {/* Search & Filter */}
-      <div className="space-y-4 pb-2">
-        <div className="relative group">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-muted-foreground group-focus-within:text-primary" />
+    <div className="flex flex-col h-full bg-background">
+      {/* Search & Filter Section */}
+      <div className="flex-shrink-0 space-y-4 pb-4">
+        {/* Search Bar */}
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+            <Search className="h-4 w-4 text-muted-foreground" />
           </div>
           <Input
             placeholder="Cari produk..."
-            className="pl-10 h-11 rounded-xl bg-muted/40 border-transparent focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:bg-background focus-visible:border-primary/30 shadow-sm text-base"
+            className="pl-11 h-11 rounded-xl bg-muted/50 border-0 focus-visible:ring-1 focus-visible:ring-primary/50 text-sm"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute inset-y-0 right-0 pr-4 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <span className="text-xs font-medium">Clear</span>
+            </button>
+          )}
         </div>
 
+        {/* Category Pills */}
         <div className="flex flex-wrap gap-2">
           <Button
-            variant={categoryId === null ? "default" : "secondary"}
-            className={`h-8 px-4 text-xs rounded-full font-medium shadow-sm ${categoryId === null ? "" : "bg-muted/60 hover:bg-muted"}`}
+            variant={categoryId === null ? "default" : "outline"}
+            size="sm"
+            className={`h-8 px-4 text-xs rounded-lg font-medium transition-all ${
+              categoryId === null
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-transparent hover:bg-muted border-border"
+            }`}
             onClick={() => setCategoryId(null)}
           >
             Semua
@@ -193,8 +221,13 @@ export function ProductGrid() {
           {categories?.map((c) => (
             <Button
               key={c.id}
-              variant={categoryId === c.id ? "default" : "secondary"}
-              className={`h-8 px-4 text-xs rounded-full font-medium shadow-sm ${categoryId === c.id ? "" : "bg-muted/60 hover:bg-muted"}`}
+              variant={categoryId === c.id ? "default" : "outline"}
+              size="sm"
+              className={`h-8 px-4 text-xs rounded-lg font-medium transition-all ${
+                categoryId === c.id
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-transparent hover:bg-muted border-border"
+              }`}
               onClick={() => setCategoryId(c.id)}
             >
               {c.name}
@@ -204,81 +237,135 @@ export function ProductGrid() {
       </div>
 
       {/* Product Grid */}
-      <ScrollArea className="flex-1 -mx-4 px-4 h-full">
+      <ScrollArea className="flex-1 -mx-4 px-4">
         {isLoading ? (
-          <div className="grid grid-cols-3 gap-4">
-            {[...Array(15)].map((_, i) => (
-              <div key={i} className="h-44 bg-muted/40 rounded-2xl" />
+          <div className="grid grid-cols-3 gap-3">
+            {[...Array(12)].map((_, i) => (
+              <div key={i} className="bg-card rounded-xl overflow-hidden border border-border/50">
+                <div className="h-24 bg-muted/40 animate-pulse" />
+                <div className="p-2.5 space-y-1.5">
+                  <div className="h-3 bg-muted/40 rounded w-3/4 animate-pulse" />
+                  <div className="h-3.5 bg-muted/40 rounded w-1/2 animate-pulse" />
+                  <div className="h-2 bg-muted/40 rounded w-1/3 animate-pulse" />
+                </div>
+              </div>
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-4 pb-8">
+          <div className="grid grid-cols-3 gap-3 pb-6">
             {products?.map((p) => {
               const isOutOfStock = p.stock <= 0;
               const stock = getStockStatus(p.stock);
               const hasImage = !!(p.image_path && p.image_path.trim() !== "");
+              const isLowStock = p.stock > 0 && p.stock < 10;
+              const isBestSeller = p.stock >= 50;
 
               return (
                 <Card
                   key={p.id}
-                  className={`cursor-pointer rounded-2xl overflow-hidden border border-border/40 shadow-sm hover:shadow-md hover:border-primary/30 bg-card ${
+                  className={`group cursor-pointer rounded-xl overflow-hidden border border-border/50 bg-card hover:border-primary/30 hover:shadow-md transition-all duration-200 ${
                     isOutOfStock
-                      ? "opacity-60 cursor-not-allowed grayscale-[0.8]"
+                      ? "opacity-60 cursor-not-allowed hover:shadow-none hover:border-border/50"
                       : ""
                   }`}
                   onClick={() => !isOutOfStock && handleAddToCart(p)}
                 >
-                  <ProductImage
-                    product={p}
-                    hasImage={hasImage}
-                    getProductColor={getProductColor}
-                    getProductInitial={getProductInitial}
-                  />
-
-                  <CardContent className="p-3.5 space-y-2.5">
-                    <div className="space-y-0.5">
-                      <div className="text-[10px] font-bold tracking-wider text-muted-foreground uppercase">
-                        {p.category_name || "Umum"}
-                      </div>
-                      <div className="font-semibold text-sm text-foreground line-clamp-2 leading-snug">
-                        {p.name}
-                      </div>
+                  {/* Image Section */}
+                  <div className="relative">
+                    <ProductImage
+                      product={p}
+                      hasImage={hasImage}
+                      getProductColor={getProductColor}
+                      getProductInitial={getProductInitial}
+                    />
+                    
+                    {/* Badges */}
+                    <div className="absolute top-2 left-2 flex flex-col gap-1">
+                      {isBestSeller && !isOutOfStock && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-500 text-white shadow-sm">
+                          <TrendingUp className="w-2.5 h-2.5" />
+                          Best
+                        </span>
+                      )}
+                      {isLowStock && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-red-500 text-white shadow-sm">
+                          <Sparkles className="w-2.5 h-2.5" />
+                          Limited
+                        </span>
+                      )}
                     </div>
 
-                    <div className="pt-2 flex flex-col items-center gap-2 border-t border-border/40">
-                      <div className="font-bold text-primary text-sm">
-                        {formatRupiah(p.price)}
+                    {/* Out of Stock Overlay */}
+                    {isOutOfStock && (
+                      <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
+                        <span className="text-xs font-bold text-muted-foreground bg-background/80 px-3 py-1 rounded-full">
+                          Habis
+                        </span>
                       </div>
-                      <div
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${stock.bg} ${stock.text}`}
-                      >
+                    )}
+
+                    {/* Add to Cart Button */}
+                    {!isOutOfStock && (
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground shadow-lg transform scale-90 group-hover:scale-100 transition-transform">
+                          <Plus className="w-3.5 h-3.5" />
+                          Tambah
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Content Section */}
+                  <CardContent className="p-2.5">
+                    {/* Product Name */}
+                    <h3 className="font-medium text-xs text-foreground line-clamp-2 leading-tight mb-1">
+                      {p.name}
+                    </h3>
+
+                    {/* Price */}
+                    <div className="font-bold text-sm text-primary mb-1.5">
+                      {formatRupiah(p.price)}
+                    </div>
+
+                    {/* Stock Indicator */}
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all ${stock.dot}`}
+                          style={{ width: `${stock.progress}%` }}
+                        />
+                      </div>
+                      <span className={`text-[9px] font-medium ${stock.text}`}>
                         {stock.label}
-                      </div>
+                      </span>
                     </div>
                   </CardContent>
                 </Card>
               );
             })}
 
+            {/* Empty State */}
             {products?.length === 0 && (
-              <div className="col-span-full py-20 flex flex-col items-center text-muted-foreground bg-muted/20 rounded-2xl border border-dashed border-border/50">
-                <PackageX className="h-12 w-12 mb-3 text-muted-foreground/50" />
-                <h3 className="text-lg font-semibold text-foreground mb-1">
+              <div className="col-span-full py-16 flex flex-col items-center text-center">
+                <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
+                  <PackageX className="h-8 w-8 text-muted-foreground/50" />
+                </div>
+                <h3 className="text-base font-semibold text-foreground mb-1">
                   Produk Tidak Ditemukan
                 </h3>
-                <p className="text-sm text-muted-foreground text-center max-w-sm mb-4">
-                  Kami tidak dapat menemukan produk yang sesuai dengan pencarian
-                  atau filter Anda.
+                <p className="text-sm text-muted-foreground max-w-xs mb-4">
+                  Tidak ada produk yang sesuai dengan pencarian atau filter Anda.
                 </p>
                 <Button
                   variant="outline"
-                  className="rounded-full shadow-sm"
+                  size="sm"
+                  className="rounded-lg"
                   onClick={() => {
                     setSearch("");
                     setCategoryId(null);
                   }}
                 >
-                  Reset filter
+                  Reset Filter
                 </Button>
               </div>
             )}
