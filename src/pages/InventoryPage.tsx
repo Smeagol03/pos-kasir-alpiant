@@ -27,6 +27,7 @@ import { ProductForm } from "../features/inventory/ProductForm";
 import { CategoryManager } from "../features/inventory/CategoryManager";
 import { StockAdjust } from "../features/inventory/StockAdjust";
 import { BulkImportDialog } from "../features/inventory/BulkImportDialog";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
 export default function InventoryPage() {
   const sessionToken = useAuthStore((s) => s.sessionToken);
@@ -39,6 +40,12 @@ export default function InventoryPage() {
   const [stockAdjustOpen, setStockAdjustOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingProduct, setEditingProduct] =
+    useState<ProductWithCategory | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [productToDelete, setProductToDelete] =
+    useState<ProductWithCategory | null>(null);
+  const [permanentDeleteOpen, setPermanentDeleteOpen] = useState(false);
+  const [productToPermanentDelete, setProductToPermanentDelete] =
     useState<ProductWithCategory | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -54,6 +61,45 @@ export default function InventoryPage() {
     onError: (e) =>
       toast({ variant: "destructive", title: "Error", description: String(e) }),
   });
+
+  const permanentDeleteMutation = useInvokeMutation<void, any>("permanent_delete_product", {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast({
+        title: "Berhasil",
+        description: "Produk telah dihapus permanen",
+      });
+    },
+    onError: (e) =>
+      toast({ variant: "destructive", title: "Error", description: String(e) }),
+  });
+
+  const handleDelete = (p: ProductWithCategory) => {
+    setProductToDelete(p);
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (productToDelete) {
+      deleteMutation.mutate({ sessionToken, productId: productToDelete.id });
+      setProductToDelete(null);
+    }
+  };
+
+  const handlePermanentDelete = (p: ProductWithCategory) => {
+    setProductToPermanentDelete(p);
+    setPermanentDeleteOpen(true);
+  };
+
+  const confirmPermanentDelete = () => {
+    if (productToPermanentDelete) {
+      permanentDeleteMutation.mutate({
+        sessionToken,
+        productId: productToPermanentDelete.id,
+      });
+      setProductToPermanentDelete(null);
+    }
+  };
 
   const { data: products, isLoading } = useInvokeQuery<ProductWithCategory[]>(
     ["products", search, showInactive],
@@ -142,18 +188,22 @@ export default function InventoryPage() {
                 size="sm"
                 className="text-destructive hover:text-destructive hover:bg-destructive/10"
                 disabled={deleteMutation.isPending}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `Yakin ingin menghapus "${p.name}"? Produk akan dinonaktifkan.`,
-                    )
-                  ) {
-                    deleteMutation.mutate({ sessionToken, productId: p.id });
-                  }
-                }}
+                onClick={() => handleDelete(p)}
               >
                 <Trash2 className="h-4 w-4 mr-1" />
                 Hapus
+              </Button>
+            )}
+            {user?.role === "ADMIN" && !p.is_active && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                disabled={permanentDeleteMutation.isPending}
+                onClick={() => handlePermanentDelete(p)}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Hapus Permanen
               </Button>
             )}
           </div>
@@ -242,6 +292,28 @@ export default function InventoryPage() {
       />
 
       <BulkImportDialog open={importOpen} onOpenChange={setImportOpen} />
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Hapus Produk"
+        description={`Apakah Anda yakin ingin menghapus "${productToDelete?.name}"? Produk akan dinonaktifkan dan tidak akan muncul di daftar produk aktif.`}
+        onConfirm={confirmDelete}
+        confirmLabel="Hapus"
+        cancelLabel="Batal"
+        isDangerous
+      />
+
+      <ConfirmDialog
+        open={permanentDeleteOpen}
+        onOpenChange={setPermanentDeleteOpen}
+        title="Hapus Permanen Produk"
+        description={`PERINGATAN: Tindakan ini tidak dapat dibatalkan! Apakah Anda yakin ingin menghapus permanen "${productToPermanentDelete?.name}" dari database?`}
+        onConfirm={confirmPermanentDelete}
+        confirmLabel="Hapus Permanen"
+        cancelLabel="Batal"
+        isDangerous
+      />
     </div>
   );
 }

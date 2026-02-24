@@ -401,6 +401,96 @@ pub async fn delete_product(
     Ok(())
 }
 
+/// Hapus produk secara permanen dari database (Admin only)
+#[tauri::command]
+pub async fn permanent_delete_product(
+    state: tauri::State<'_, AppState>,
+    session_token: String,
+    product_id: i64,
+) -> Result<(), String> {
+    crate::auth::guard::validate_admin(&state, &session_token)?;
+
+    // Cek apakah produk ada dan sudah non-aktif
+    let product: Option<(bool,)> = sqlx::query_as("SELECT is_active FROM products WHERE id = ?")
+        .bind(product_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    match product {
+        Some((is_active,)) if is_active => {
+            return Err("Produk aktif tidak dapat dihapus permanen. Nonaktifkan terlebih dahulu.".into());
+        }
+        None => {
+            return Err("Produk tidak ditemukan".into());
+        }
+        _ => {}
+    }
+
+    // Hapus dari database
+    sqlx::query("DELETE FROM products WHERE id = ?")
+        .bind(product_id)
+        .execute(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Log Activity
+    let session = crate::auth::guard::validate_admin(&state, &session_token)?;
+    crate::commands::activity_cmd::log_activity(
+        &state.db,
+        None,
+        Some(session.user_id),
+        "PERMANENT_DELETE_PRODUCT",
+        &format!("Menghapus permanen produk ID {}", product_id),
+        None,
+    ).await;
+
+    Ok(())
+}
+
+/// Get product image as base64 string
+#[tauri::command]
+pub async fn get_product_image(
+    state: tauri::State<'_, AppState>,
+    session_token: String,
+    product_id: i64,
+) -> Result<String, String> {
+    crate::auth::guard::validate_session(&state, &session_token)?;
+
+    // Get image_path from database
+    let image_path: Option<(String,)> = sqlx::query_as("SELECT image_path FROM products WHERE id = ?")
+        .bind(product_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    match image_path {
+        Some((path,)) => {
+            // Read file and encode as base64
+            let image_data = std::fs::read(&path)
+                .map_err(|e| format!("Failed to read image: {}", e))?;
+            
+            // Determine mime type from extension
+            let ext = std::path::Path::new(&path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("jpg")
+                .to_lowercase();
+            
+            let mime_type = match ext.as_str() {
+                "png" => "image/png",
+                "webp" => "image/webp",
+                _ => "image/jpeg",
+            };
+
+            use base64::Engine;
+            let base64_data = base64::engine::general_purpose::STANDARD.encode(&image_data);
+            Ok(format!("data:{};base64,{}", mime_type, base64_data))
+        }
+        None => Err("Image not found".into()),
+    }
+}
+
 /// Simpan gambar produk — copy file ke AppData/products/ (Admin only)
 #[tauri::command]
 pub async fn save_product_image(

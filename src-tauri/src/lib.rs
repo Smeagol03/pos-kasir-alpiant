@@ -60,6 +60,8 @@ pub fn run() {
             commands::product_cmd::create_product,
             commands::product_cmd::update_product,
             commands::product_cmd::delete_product,
+            commands::product_cmd::permanent_delete_product,
+            commands::product_cmd::get_product_image,
             commands::product_cmd::adjust_stock,
             commands::product_cmd::get_categories,
             commands::product_cmd::create_category,

@@ -2,6 +2,10 @@ import { useQuery, useMutation, UseQueryOptions, UseMutationOptions } from "@tan
 import { invoke } from "../lib/tauri";
 import { InvokeArgs } from "@tauri-apps/api/core";
 
+export function useInvoke() {
+    return { invoke };
+}
+
 export function useInvokeQuery<TData, TError = Error>(
     queryKey: unknown[],
     cmd: string,

@@ -1,14 +1,81 @@
-import { useState } from "react";
-import { useInvokeQuery } from "../../hooks/useInvokeQuery";
+import { useState, useEffect } from "react";
+import { useInvokeQuery, useInvoke } from "../../hooks/useInvokeQuery";
 import { ProductWithCategory, CategoryWithCount } from "../../types";
 import { useAuthStore } from "../../store/authStore";
 import { useCartStore } from "../../store/cartStore";
 import { Input } from "../../components/ui/input";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
-import { Search, ShoppingCart, Info } from "lucide-react";
+import { Search, PackageX } from "lucide-react";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { formatRupiah } from "../../lib/currency";
+
+interface ProductImageProps {
+  product: ProductWithCategory;
+  hasImage: boolean;
+  getProductColor: (name: string) => string;
+  getProductInitial: (name: string) => string;
+}
+
+function ProductImage({ product, hasImage, getProductColor, getProductInitial }: ProductImageProps) {
+  const [imageError, setImageError] = useState(false);
+  const [imgSrc, setImgSrc] = useState<string>("");
+  const [imageKey, setImageKey] = useState(0);
+  const { invoke } = useInvoke();
+  const sessionToken = useAuthStore((s) => s.sessionToken);
+
+  // Debug log
+  useEffect(() => {
+    console.log(`ProductImage: id=${product.id}, hasImage=${hasImage}, image_path=${product.image_path}`);
+  }, [product.id, hasImage, product.image_path]);
+
+  // Reset image state when product changes
+  useEffect(() => {
+    setImageError(false);
+    setImageKey((prev) => prev + 1);
+    setImgSrc("");
+  }, [product.id]);
+
+  // Load image as base64
+  useEffect(() => {
+    if (hasImage && product.image_path && sessionToken) {
+      invoke<string>("get_product_image", {
+        sessionToken,
+        productId: product.id,
+      })
+        .then((base64Data) => {
+          console.log(`ProductImage: Loaded image for product ${product.id}`);
+          setImgSrc(base64Data);
+        })
+        .catch((err) => {
+          console.error(`ProductImage: Failed to load image: ${err}`);
+          setImageError(true);
+        });
+    }
+  }, [hasImage, product.image_path, product.id, sessionToken, imageKey]);
+
+  if (hasImage && !imageError && imgSrc) {
+    return (
+      <div className="h-24 w-full overflow-hidden bg-muted">
+        <img
+          key={imageKey}
+          src={imgSrc}
+          alt={product.name}
+          className="h-full w-full object-cover"
+          onError={() => setImageError(true)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`h-24 flex items-center justify-center font-bold text-3xl tracking-tight shadow-inner ${getProductColor(product.name)}`}
+    >
+      {getProductInitial(product.name)}
+    </div>
+  );
+}
 
 export function ProductGrid() {
   const sessionToken = useAuthStore((s) => s.sessionToken);
@@ -48,44 +115,68 @@ export function ProductGrid() {
     });
   };
 
-  // Function to get stock badge color and variant
   const getStockStatus = (stock: number) => {
-    if (stock <= 0) return { color: "bg-red-500 text-white border-transparent", label: "Habis" };
-    if (stock < 10) return { color: "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400", label: `Kritis: ${stock}` };
-    if (stock < 50) return { color: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400", label: `Menipis: ${stock}` };
-    return { color: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400", label: `Stok: ${stock}` };
+    if (stock <= 0)
+      return {
+        bg: "bg-destructive/10",
+        text: "text-destructive",
+        label: "Habis",
+      };
+    if (stock < 10)
+      return {
+        bg: "bg-orange-500/10",
+        text: "text-orange-600 dark:text-orange-400",
+        label: `Sisa ${stock}`,
+      };
+    if (stock < 50)
+      return {
+        bg: "bg-blue-500/10",
+        text: "text-blue-600 dark:text-blue-400",
+        label: `Sisa ${stock}`,
+      };
+    return {
+      bg: "bg-emerald-500/10",
+      text: "text-emerald-600 dark:text-emerald-400",
+      label: `Stok ${stock}`,
+    };
   };
 
-  // Function to get initials or placeholder for product
   const getProductInitial = (name: string) => {
-    return name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase();
   };
 
-  // Generate a consistent color based on product name
   const getProductColor = (name: string) => {
-    const colors = [
-      "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400",
-      "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400",
-      "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400",
-      "bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400",
-      "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400",
-      "bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400",
+    const gradients = [
+      "bg-gradient-to-br from-red-500 to-rose-600 text-white",
+      "bg-gradient-to-br from-blue-500 to-indigo-600 text-white",
+      "bg-gradient-to-br from-emerald-400 to-teal-600 text-white",
+      "bg-gradient-to-br from-amber-400 to-orange-500 text-white",
+      "bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white",
+      "bg-gradient-to-br from-cyan-400 to-blue-500 text-white",
     ];
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
       hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
-    return colors[Math.abs(hash) % colors.length];
+    return gradients[Math.abs(hash) % gradients.length];
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4">
-      <div className="flex flex-col space-y-4">
+    <div className="flex flex-col h-full space-y-4 bg-background">
+      {/* Search & Filter */}
+      <div className="space-y-4 pb-2">
         <div className="relative group">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 transition-colors group-focus-within:text-primary" />
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-muted-foreground group-focus-within:text-primary" />
+          </div>
           <Input
-            placeholder="Cari produk berdasarkan nama atau barcode (scan)..."
-            className="pl-11 h-12 bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-800 rounded-xl transition-all focus:ring-2 focus:ring-primary/20 focus:bg-white dark:focus:bg-slate-900"
+            placeholder="Cari produk..."
+            className="pl-10 h-11 rounded-xl bg-muted/40 border-transparent focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:bg-background focus-visible:border-primary/30 shadow-sm text-base"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -93,12 +184,8 @@ export function ProductGrid() {
 
         <div className="flex flex-wrap gap-2">
           <Button
-            variant={categoryId === null ? "default" : "outline"}
-            className={`rounded-full px-5 h-9 text-xs font-bold transition-all ${
-              categoryId === null 
-              ? "bg-slate-900 dark:bg-white dark:text-slate-900 shadow-md" 
-              : "bg-white dark:bg-slate-900/50 hover:bg-slate-50 border-slate-200 dark:border-slate-800"
-            }`}
+            variant={categoryId === null ? "default" : "secondary"}
+            className={`h-8 px-4 text-xs rounded-full font-medium shadow-sm ${categoryId === null ? "" : "bg-muted/60 hover:bg-muted"}`}
             onClick={() => setCategoryId(null)}
           >
             Semua
@@ -106,12 +193,8 @@ export function ProductGrid() {
           {categories?.map((c) => (
             <Button
               key={c.id}
-              variant={categoryId === c.id ? "default" : "outline"}
-              className={`rounded-full px-5 h-9 text-xs font-bold transition-all ${
-                categoryId === c.id 
-                ? "bg-slate-900 dark:bg-white dark:text-slate-900 shadow-md" 
-                : "bg-white dark:bg-slate-900/50 hover:bg-slate-50 border-slate-200 dark:border-slate-800"
-              }`}
+              variant={categoryId === c.id ? "default" : "secondary"}
+              className={`h-8 px-4 text-xs rounded-full font-medium shadow-sm ${categoryId === c.id ? "" : "bg-muted/60 hover:bg-muted"}`}
               onClick={() => setCategoryId(c.id)}
             >
               {c.name}
@@ -120,63 +203,81 @@ export function ProductGrid() {
         </div>
       </div>
 
+      {/* Product Grid */}
       <ScrollArea className="flex-1 -mx-4 px-4 h-full">
         {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 pt-1">
-            {[...Array(12)].map((_, i) => (
-              <div key={i} className="h-44 bg-slate-100 dark:bg-slate-800/50 animate-pulse rounded-2xl border border-slate-200 dark:border-slate-800" />
+          <div className="grid grid-cols-3 gap-4">
+            {[...Array(15)].map((_, i) => (
+              <div key={i} className="h-44 bg-muted/40 rounded-2xl" />
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 pt-1 pb-8">
-            {products?.map((p) => (
-              <Card
-                key={p.id}
-                className={`group relative overflow-hidden border-slate-200 dark:border-slate-800 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 active:scale-95 cursor-pointer rounded-2xl bg-white dark:bg-slate-900/50 ${
-                  p.stock <= 0 ? "opacity-60 grayscale cursor-not-allowed" : ""
-                }`}
-                onClick={() => p.stock > 0 && handleAddToCart(p)}
-              >
-                {/* Product Image/Initial Placeholder */}
-                <div className={`h-24 flex items-center justify-center font-black text-2xl tracking-tighter transition-transform group-hover:scale-110 ${getProductColor(p.name)}`}>
-                  {getProductInitial(p.name)}
-                </div>
+          <div className="grid grid-cols-3 gap-4 pb-8">
+            {products?.map((p) => {
+              const isOutOfStock = p.stock <= 0;
+              const stock = getStockStatus(p.stock);
+              const hasImage = !!(p.image_path && p.image_path.trim() !== "");
 
-                <CardContent className="p-3">
-                  <div className="flex flex-col space-y-1.5">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-primary/70 truncate">
-                      {p.category_name || "Tanpa Kategori"}
+              return (
+                <Card
+                  key={p.id}
+                  className={`cursor-pointer rounded-2xl overflow-hidden border border-border/40 shadow-sm hover:shadow-md hover:border-primary/30 bg-card ${
+                    isOutOfStock
+                      ? "opacity-60 cursor-not-allowed grayscale-[0.8]"
+                      : ""
+                  }`}
+                  onClick={() => !isOutOfStock && handleAddToCart(p)}
+                >
+                  <ProductImage
+                    product={p}
+                    hasImage={hasImage}
+                    getProductColor={getProductColor}
+                    getProductInitial={getProductInitial}
+                  />
+
+                  <CardContent className="p-3.5 space-y-2.5">
+                    <div className="space-y-0.5">
+                      <div className="text-[10px] font-bold tracking-wider text-muted-foreground uppercase">
+                        {p.category_name || "Umum"}
+                      </div>
+                      <div className="font-semibold text-sm text-foreground line-clamp-2 leading-snug">
+                        {p.name}
+                      </div>
                     </div>
-                    <div className="font-bold text-sm text-slate-900 dark:text-white line-clamp-2 min-h-[2.5rem] leading-tight group-hover:text-primary transition-colors">
-                      {p.name}
-                    </div>
-                    
-                    <div className="pt-2 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 mt-2">
-                      <div className="font-black text-slate-900 dark:text-white">
+
+                    <div className="pt-2 flex flex-col items-center gap-2 border-t border-border/40">
+                      <div className="font-bold text-primary text-sm">
                         {formatRupiah(p.price)}
                       </div>
-                      <div className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${getStockStatus(p.stock).color}`}>
-                        {getStockStatus(p.stock).label}
+                      <div
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${stock.bg} ${stock.text}`}
+                      >
+                        {stock.label}
                       </div>
                     </div>
-                  </div>
-                </CardContent>
+                  </CardContent>
+                </Card>
+              );
+            })}
 
-                {/* Hover Action Overlay */}
-                {p.stock > 0 && (
-                  <div className="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                    <div className="bg-white dark:bg-slate-900 text-primary p-2 rounded-full shadow-lg transform scale-50 group-hover:scale-100 transition-transform duration-300">
-                      <ShoppingCart className="h-5 w-5 fill-primary/20" />
-                    </div>
-                  </div>
-                )}
-              </Card>
-            ))}
             {products?.length === 0 && (
-              <div className="col-span-full py-20 flex flex-col items-center justify-center text-muted-foreground bg-slate-50 dark:bg-slate-900/20 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800">
-                <Info className="h-10 w-10 mb-4 opacity-20" />
-                <p className="font-medium">Tidak ada produk ditemukan.</p>
-                <Button variant="link" onClick={() => { setSearch(""); setCategoryId(null); }}>
+              <div className="col-span-full py-20 flex flex-col items-center text-muted-foreground bg-muted/20 rounded-2xl border border-dashed border-border/50">
+                <PackageX className="h-12 w-12 mb-3 text-muted-foreground/50" />
+                <h3 className="text-lg font-semibold text-foreground mb-1">
+                  Produk Tidak Ditemukan
+                </h3>
+                <p className="text-sm text-muted-foreground text-center max-w-sm mb-4">
+                  Kami tidak dapat menemukan produk yang sesuai dengan pencarian
+                  atau filter Anda.
+                </p>
+                <Button
+                  variant="outline"
+                  className="rounded-full shadow-sm"
+                  onClick={() => {
+                    setSearch("");
+                    setCategoryId(null);
+                  }}
+                >
                   Reset filter
                 </Button>
               </div>

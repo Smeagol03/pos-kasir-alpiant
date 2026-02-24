@@ -44,11 +44,11 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         "CREATE TABLE IF NOT EXISTS products (
             id          INTEGER  PRIMARY KEY AUTOINCREMENT,
             category_id INTEGER  REFERENCES categories(id) ON DELETE SET NULL,
-            sku         TEXT     UNIQUE,
+            sku         TEXT,
             name        TEXT     NOT NULL,
             price       REAL     NOT NULL CHECK(price >= 0),
             stock       INTEGER  NOT NULL DEFAULT 0 CHECK(stock >= 0),
-            barcode     TEXT     UNIQUE,
+            barcode     TEXT,
             is_active   INTEGER  NOT NULL DEFAULT 1,
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -56,6 +56,19 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     )
     .execute(pool)
     .await?;
+
+    // Partial unique indexes - hanya berlaku untuk produk aktif
+    sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sku_active ON products(sku) WHERE sku IS NOT NULL AND is_active = 1")
+        .execute(pool)
+        .await?;
+
+    sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_barcode_active ON products(barcode) WHERE barcode IS NOT NULL AND is_active = 1")
+        .execute(pool)
+        .await?;
+
+    sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name_active ON products(name) WHERE is_active = 1")
+        .execute(pool)
+        .await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)")
         .execute(pool)
@@ -254,6 +267,33 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .execute(pool)
     .await?;
 
+    // Fix unique constraints untuk existing database
+    // Drop constraint lama dan ganti dengan partial unique indexes
+    fix_unique_constraints(pool).await?;
+
+    Ok(())
+}
+
+/// Fix unique constraints pada products table untuk mendukung soft-delete
+async fn fix_unique_constraints(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    // Drop indexes lama jika ada
+    let _ = sqlx::query("DROP INDEX IF EXISTS idx_products_sku").execute(pool).await;
+    let _ = sqlx::query("DROP INDEX IF EXISTS idx_products_barcode").execute(pool).await;
+    let _ = sqlx::query("DROP INDEX IF EXISTS idx_products_name").execute(pool).await;
+    
+    // Buat partial unique indexes (hanya untuk produk aktif)
+    sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sku_active ON products(sku) WHERE sku IS NOT NULL AND is_active = 1")
+        .execute(pool)
+        .await?;
+    
+    sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_barcode_active ON products(barcode) WHERE barcode IS NOT NULL AND is_active = 1")
+        .execute(pool)
+        .await?;
+    
+    sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name_active ON products(name) WHERE is_active = 1")
+        .execute(pool)
+        .await?;
+    
     Ok(())
 }
 

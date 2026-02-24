@@ -41,6 +41,7 @@ export interface ProductWithCategory {
     cost_price: number;
     stock: number;
     barcode: string | null;
+    image_path: string | null;
     is_active: boolean;
 }
 

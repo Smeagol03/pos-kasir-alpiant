@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/button";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { Trash2, Plus, Minus, Tag, Banknote, ShoppingCart, Info, Percent } from "lucide-react";
 import { Separator } from "../../components/ui/separator";
+import { useState } from "react";
 
 export function CartPanel({
   onCheckout,
@@ -15,6 +16,7 @@ export function CartPanel({
   const {
     items,
     updateQuantity,
+    setQuantity,
     removeItem,
     clearCart,
     getSubtotal,
@@ -28,6 +30,8 @@ export function CartPanel({
     tax_label,
     tax_enabled,
   } = useCartStore();
+
+  const [editingQty, setEditingQty] = useState<number | null>(null);
 
   const subtotal = getSubtotal();
   const discountTotal = getDiscountAmount();
@@ -112,9 +116,38 @@ export function CartPanel({
                     >
                       <Minus className="h-3 w-3" />
                     </Button>
-                    <span className="w-8 text-center text-xs font-black text-slate-900 dark:text-white">
-                      {item.quantity}
-                    </span>
+                    
+                    {editingQty === item.product_id ? (
+                      <input
+                        autoFocus
+                        type="number"
+                        min="1"
+                        defaultValue={item.quantity}
+                        className="w-20 h-7 text-center text-xs font-black bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        onBlur={(e) => {
+                          const val = parseInt(e.target.value) || 1;
+                          setQuantity(item.product_id, Math.max(1, val));
+                          setEditingQty(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.currentTarget.blur();
+                          }
+                          if (e.key === "Escape") {
+                            setEditingQty(null);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <button
+                        onClick={() => setEditingQty(item.product_id)}
+                        className="w-12 text-center text-xs font-black text-slate-900 dark:text-white hover:bg-white dark:hover:bg-slate-700 rounded-md transition-colors"
+                        title="Klik untuk edit quantity"
+                      >
+                        {item.quantity}
+                      </button>
+                    )}
+                    
                     <Button
                       variant="ghost"
                       size="icon"
@@ -124,7 +157,7 @@ export function CartPanel({
                       <Plus className="h-3 w-3" />
                     </Button>
                   </div>
-                  
+
                   <Button
                     variant="ghost"
                     size="icon"

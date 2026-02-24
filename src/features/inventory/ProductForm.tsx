@@ -90,11 +90,13 @@ export function ProductForm({
     {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["products"] });
+        queryClient.invalidateQueries({ queryKey: ["product"] });
         toast({ title: "Success", description: "Product image saved" });
         onOpenChange(false);
       },
       onError: (e) => {
         queryClient.invalidateQueries({ queryKey: ["products"] });
+        queryClient.invalidateQueries({ queryKey: ["product"] });
         toast({
           variant: "destructive",
           title: "Warning",

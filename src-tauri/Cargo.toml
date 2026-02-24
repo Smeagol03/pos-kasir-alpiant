@@ -29,5 +29,5 @@ chrono = { version = "0.4", features = ["serde"] }
 bcrypt = "0.15"
 thiserror = "1"
 tauri-plugin-dialog = "2.6.0"
-# escpos = "0.7" # verify crate name later if needed, blueprint mentions escpos-rs
+base64 = "0.21"
 
