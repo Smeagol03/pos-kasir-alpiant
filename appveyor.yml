@@ -48,14 +48,3 @@ artifacts:
     name: WindowsPortable
 
 test: off
-
-deploy:
-  # Deploy to GitHub Releases on tag push
-  - provider: GitHub
-    auth_token:
-      secure: "" # Encrypt your GitHub token via AppVeyor settings
-    artifact: WindowsInstaller-NSIS,WindowsInstaller-MSI
-    draft: true
-    prerelease: false
-    on:
-      APPVEYOR_REPO_TAG: true
