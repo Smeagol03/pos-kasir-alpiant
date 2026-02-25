@@ -3,7 +3,7 @@ version: "{build}"
 image: Visual Studio 2022
 
 environment:
-  nodejs_version: "20"
+  nodejs_version: "22"
 
 cache:
   - node_modules -> package-lock.json

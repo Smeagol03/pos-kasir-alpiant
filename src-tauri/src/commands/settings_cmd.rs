@@ -400,7 +400,7 @@ pub async fn list_serial_ports(
                 let mut current_driver = String::new();
                 let mut current_port_name = String::new();
                 
-                let mut process_entry = |name: &str, driver: &str, port_name: &str, ports: &mut Vec<PrinterPort>| {
+                let process_entry = |name: &str, driver: &str, port_name: &str, ports: &mut Vec<PrinterPort>| {
                     if name.is_empty() { return; }
                     let nl = name.to_lowercase();
                     let is_virtual = nl.contains("pdf") || nl.contains("xps")
