@@ -49,7 +49,7 @@ export function Sidebar() {
           <span className="text-primary">Kasir</span>
           <span className="text-accent">Pro</span>
           <span className="text-muted-foreground text-[10px] ml-1 px-1.5 py-0.5 rounded-full bg-muted">
-            v3.0
+            v3.1
           </span>
         </h1>
         <ThemeToggle />
