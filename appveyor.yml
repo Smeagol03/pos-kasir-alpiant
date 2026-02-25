@@ -1,0 +1,61 @@
+version: "{build}"
+
+image: Visual Studio 2022
+
+environment:
+  nodejs_version: "20"
+
+cache:
+  - node_modules -> package-lock.json
+  - '%USERPROFILE%\.cargo\registry'
+  - '%USERPROFILE%\.cargo\git'
+  - src-tauri\target -> src-tauri\Cargo.lock
+
+install:
+  # Install Node.js
+  - ps: Install-Product node $env:nodejs_version x64
+
+  # Install Rust stable
+  - curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+  - set PATH=%USERPROFILE%\.cargo\bin;%PATH%
+  - rustup target add x86_64-pc-windows-msvc
+  - rustc --version
+  - cargo --version
+
+  # Install npm dependencies
+  - npm ci
+
+build_script:
+  # Build Tauri app for Windows (generates NSIS .exe + MSI installer)
+  - npm run tauri build
+
+after_build:
+  # Show generated files
+  - dir /s /b src-tauri\target\release\bundle\nsis\*.exe
+  - dir /s /b src-tauri\target\release\bundle\msi\*.msi
+
+artifacts:
+  # NSIS Installer (.exe) — recommended
+  - path: src-tauri\target\release\bundle\nsis\*.exe
+    name: WindowsInstaller-NSIS
+
+  # MSI Installer
+  - path: src-tauri\target\release\bundle\msi\*.msi
+    name: WindowsInstaller-MSI
+
+  # Portable executable
+  - path: src-tauri\target\release\pos-kasir-alpiant.exe
+    name: WindowsPortable
+
+test: off
+
+deploy:
+  # Deploy to GitHub Releases on tag push
+  - provider: GitHub
+    auth_token:
+      secure: "" # Encrypt your GitHub token via AppVeyor settings
+    artifact: WindowsInstaller-NSIS,WindowsInstaller-MSI
+    draft: true
+    prerelease: false
+    on:
+      APPVEYOR_REPO_TAG: true

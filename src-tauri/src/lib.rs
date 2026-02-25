@@ -99,6 +99,7 @@ pub fn run() {
             commands::settings_cmd::list_serial_ports,
             commands::settings_cmd::print_receipt,
             commands::settings_cmd::test_print,
+            commands::settings_cmd::print_barcode_labels,
             // Payment QRIS
             commands::payment_cmd::generate_qris_payment,
             commands::payment_cmd::check_qris_status,

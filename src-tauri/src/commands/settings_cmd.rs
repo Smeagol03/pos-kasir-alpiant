@@ -590,8 +590,9 @@ pub async fn print_receipt(
     esc.push(b'\n');
     esc.push(b'\n');
 
-    // Cut paper
-    esc.extend_from_slice(b"\x1D\x56\x41\x03"); // GS V A 3 — Partial cut + 3 lines feed
+    // Cut paper (thermal) + Form Feed (inkjet/laser)
+    esc.extend_from_slice(b"\x1D\x56\x41\x03"); // GS V A 3 — Partial cut (thermal)
+    esc.push(0x0C); // Form Feed — eject page (untuk semua jenis printer)
 
     // Kirim ke printer
     send_to_printer(&port, &esc).await?;
@@ -627,11 +628,96 @@ pub async fn test_print(
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     esc.extend_from_slice(format!("{}\n", now).as_bytes());
     esc.extend_from_slice(b"================================\n\n\n");
-    esc.extend_from_slice(b"\x1D\x56\x41\x03"); // Cut
+    esc.extend_from_slice(b"\x1D\x56\x41\x03"); // Cut (thermal)
+    esc.push(0x0C); // Form Feed — eject page (untuk semua jenis printer)
 
     send_to_printer(&port, &esc).await?;
 
     Ok(())
+}
+
+/// Cetak label barcode via printer thermal (ESC/POS native barcode)
+#[tauri::command]
+pub async fn print_barcode_labels(
+    state: tauri::State<'_, AppState>,
+    session_token: String,
+    labels: Vec<BarcodeLabelItem>,
+) -> Result<(), String> {
+    crate::auth::guard::validate_admin(&state, &session_token)?;
+
+    let port = get_printer_port(&state).await?;
+    if port.is_empty() {
+        return Err("Printer belum dikonfigurasi. Silakan atur di Settings → Hardware.".into());
+    }
+
+    if labels.is_empty() {
+        return Err("Tidak ada label untuk dicetak.".into());
+    }
+
+    let mut esc: Vec<u8> = Vec::new();
+
+    // Init printer
+    esc.extend_from_slice(b"\x1B\x40"); // ESC @ — Initialize
+
+    for label in &labels {
+        for _ in 0..label.qty {
+            // Center align
+            esc.extend_from_slice(b"\x1B\x61\x01"); // ESC a 1 — Center
+
+            // Product name (bold)
+            esc.extend_from_slice(b"\x1B\x45\x01"); // Bold ON
+            let name: String = label.name.chars().take(24).collect();
+            esc.extend_from_slice(name.as_bytes());
+            esc.push(b'\n');
+            esc.extend_from_slice(b"\x1B\x45\x00"); // Bold OFF
+
+            // Price
+            let price_str = format!("Rp {}", format_number(label.price as i64));
+            esc.extend_from_slice(price_str.as_bytes());
+            esc.push(b'\n');
+
+            // Barcode settings
+            esc.extend_from_slice(b"\x1D\x48\x02"); // GS H 2 — HRI below barcode
+            esc.extend_from_slice(b"\x1D\x68\x50"); // GS h 80 — Barcode height 80 dots
+            esc.extend_from_slice(b"\x1D\x77\x02"); // GS w 2 — Barcode width multiplier
+
+            // Print barcode
+            let barcode = &label.barcode;
+            if barcode.len() == 13 {
+                // EAN-13
+                esc.extend_from_slice(b"\x1D\x6B\x43"); // GS k C (CODE 67 = EAN13)
+                esc.push(barcode.len() as u8);
+                esc.extend_from_slice(barcode.as_bytes());
+            } else {
+                // Code128 for arbitrary length
+                esc.extend_from_slice(b"\x1D\x6B\x49"); // GS k I (CODE 73 = CODE128)
+                esc.push(barcode.len() as u8);
+                esc.extend_from_slice(barcode.as_bytes());
+            }
+            esc.push(b'\n');
+
+            // Separator between labels
+            esc.extend_from_slice(b"--------------------------------\n");
+        }
+    }
+
+    // Feed and cut
+    esc.extend_from_slice(b"\n\n");
+    esc.extend_from_slice(b"\x1D\x56\x41\x03"); // GS V A 3 — Partial cut
+    esc.push(0x0C); // Form Feed
+
+    send_to_printer(&port, &esc).await?;
+
+    eprintln!("[PRINTER] Barcode labels printed: {} items", labels.len());
+    Ok(())
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BarcodeLabelItem {
+    pub name: String,
+    pub price: f64,
+    pub barcode: String,
+    pub qty: u32,
 }
 
 // ──────── Helper Functions ────────

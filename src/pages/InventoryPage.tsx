@@ -21,12 +21,14 @@ import {
   PackagePlus,
   Trash2,
   Upload,
+  Barcode,
 } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 import { ProductForm } from "../features/inventory/ProductForm";
 import { CategoryManager } from "../features/inventory/CategoryManager";
 import { StockAdjust } from "../features/inventory/StockAdjust";
 import { BulkImportDialog } from "../features/inventory/BulkImportDialog";
+import { BarcodeLabelDialog } from "../features/inventory/BarcodeLabelDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 
 export default function InventoryPage() {
@@ -49,6 +51,10 @@ export default function InventoryPage() {
     useState<ProductWithCategory | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [barcodePrintOpen, setBarcodePrintOpen] = useState(false);
+  const [barcodePrintProducts, setBarcodePrintProducts] = useState<
+    ProductWithCategory[]
+  >([]);
 
   const deleteMutation = useInvokeMutation<void, any>("delete_product", {
     onSuccess: () => {
@@ -62,17 +68,24 @@ export default function InventoryPage() {
       toast({ variant: "destructive", title: "Error", description: String(e) }),
   });
 
-  const permanentDeleteMutation = useInvokeMutation<void, any>("permanent_delete_product", {
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["products"] });
-      toast({
-        title: "Berhasil",
-        description: "Produk telah dihapus permanen",
-      });
+  const permanentDeleteMutation = useInvokeMutation<void, any>(
+    "permanent_delete_product",
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["products"] });
+        toast({
+          title: "Berhasil",
+          description: "Produk telah dihapus permanen",
+        });
+      },
+      onError: (e) =>
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: String(e),
+        }),
     },
-    onError: (e) =>
-      toast({ variant: "destructive", title: "Error", description: String(e) }),
-  });
+  );
 
   const handleDelete = (p: ProductWithCategory) => {
     setProductToDelete(p);
@@ -120,6 +133,26 @@ export default function InventoryPage() {
   const handleAdjustStock = (p: ProductWithCategory) => {
     setEditingProduct(p);
     setStockAdjustOpen(true);
+  };
+
+  const handlePrintBarcode = (p: ProductWithCategory) => {
+    setBarcodePrintProducts([p]);
+    setBarcodePrintOpen(true);
+  };
+
+  const handleBatchPrintBarcode = () => {
+    const activeProducts = (products || []).filter(
+      (p) => p.is_active && p.barcode,
+    );
+    if (activeProducts.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Tidak ada produk dengan barcode",
+      });
+      return;
+    }
+    setBarcodePrintProducts(activeProducts);
+    setBarcodePrintOpen(true);
   };
 
   const columns = useMemo<Column<ProductWithCategory>[]>(
@@ -178,6 +211,17 @@ export default function InventoryPage() {
         header: "Actions",
         cell: (p) => (
           <div className="flex items-center gap-1">
+            {p.barcode && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                title="Cetak Barcode"
+                onClick={() => handlePrintBarcode(p)}
+              >
+                <Barcode className="h-4 w-4" />
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => handleEdit(p)}>
               <Pencil className="h-4 w-4 mr-1" />
               Edit
@@ -226,6 +270,10 @@ export default function InventoryPage() {
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="mr-2 h-4 w-4" />
             Import CSV
+          </Button>
+          <Button variant="outline" onClick={handleBatchPrintBarcode}>
+            <Barcode className="mr-2 h-4 w-4" />
+            Cetak Barcode
           </Button>
           <Button variant="outline" onClick={() => setCatManagerOpen(true)}>
             <Settings2 className="mr-2 h-4 w-4" />
@@ -292,6 +340,12 @@ export default function InventoryPage() {
       />
 
       <BulkImportDialog open={importOpen} onOpenChange={setImportOpen} />
+
+      <BarcodeLabelDialog
+        open={barcodePrintOpen}
+        onOpenChange={setBarcodePrintOpen}
+        products={barcodePrintProducts}
+      />
 
       <ConfirmDialog
         open={deleteConfirmOpen}
