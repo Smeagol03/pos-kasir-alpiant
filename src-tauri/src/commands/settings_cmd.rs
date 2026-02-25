@@ -3,6 +3,15 @@ use crate::AppState;
 use std::collections::HashMap;
 use tauri::Manager;
 
+/// Helper: create Command yang TIDAK muncul console window di Windows
+#[cfg(target_os = "windows")]
+fn win_cmd(program: &str) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    let mut cmd = std::process::Command::new(program);
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    cmd
+}
+
 /// Ambil semua setting dari DB dan bentuk struct AppSettings
 #[tauri::command]
 pub async fn get_settings(
@@ -387,7 +396,7 @@ pub async fn list_serial_ports(
         eprintln!("[PRINTER SCAN] Scanning Windows Print Spooler...");
         
         // Method A: PowerShell Get-Printer (Windows 8+)
-        let ps_result = std::process::Command::new("powershell")
+        let ps_result = win_cmd("powershell")
             .args(["-NoProfile", "-Command", 
                 "Get-Printer | Select-Object -Property Name,DriverName,PortName,PrinterStatus | Format-List"])
             .output();
@@ -437,7 +446,7 @@ pub async fn list_serial_ports(
         
         // Method B: wmic fallback
         if !found_spooler {
-            if let Ok(output) = std::process::Command::new("wmic")
+            if let Ok(output) = win_cmd("wmic")
                 .args(["printer", "get", "Name,PortName,DriverName", "/format:csv"])
                 .output()
             {
@@ -795,9 +804,12 @@ async fn print_via_windows_spooler(printer_name: &str, data: &[u8]) -> Result<()
     let temp_path_str = temp_path.to_string_lossy().to_string();
     
     // Method 1: Try `copy /b` to printer share (works for most thermal printers)
-    let copy_result = std::process::Command::new("cmd")
+    #[cfg(target_os = "windows")]
+    let copy_result = win_cmd("cmd")
         .args(["/C", &format!("copy /b \"{}\" \"\\\\localhost\\{}\"", temp_path_str, printer_name)])
         .output();
+    #[cfg(not(target_os = "windows"))]
+    let copy_result: Result<std::process::Output, std::io::Error> = Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Windows only"));
     
     if let Ok(output) = copy_result {
         if output.status.success() {
@@ -810,9 +822,12 @@ async fn print_via_windows_spooler(printer_name: &str, data: &[u8]) -> Result<()
     }
     
     // Method 2: Fallback to `print` command
-    let print_result = std::process::Command::new("cmd")
+    #[cfg(target_os = "windows")]
+    let print_result = win_cmd("cmd")
         .args(["/C", &format!("print /d:\"{}\" \"{}\"", printer_name, temp_path_str)])
         .output();
+    #[cfg(not(target_os = "windows"))]
+    let print_result: Result<std::process::Output, std::io::Error> = Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Windows only"));
     
     if let Ok(output) = print_result {
         if output.status.success() {
@@ -825,10 +840,13 @@ async fn print_via_windows_spooler(printer_name: &str, data: &[u8]) -> Result<()
     }
     
     // Method 3: Try PowerShell Out-Printer as last resort 
-    let ps_result = std::process::Command::new("powershell")
+    #[cfg(target_os = "windows")]
+    let ps_result = win_cmd("powershell")
         .args(["-NoProfile", "-Command", 
             &format!("Get-Content -Encoding Byte -Path '{}' | Out-Printer -Name '{}'", temp_path_str, printer_name)])
         .output();
+    #[cfg(not(target_os = "windows"))]
+    let ps_result: Result<std::process::Output, std::io::Error> = Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Windows only"));
     
     let _ = std::fs::remove_file(&temp_path);
     
