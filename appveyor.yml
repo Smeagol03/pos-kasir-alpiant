@@ -26,6 +26,8 @@ install:
   - npm ci
 
 build_script:
+  # Fix: AppVeyor sets CI=True (capital T), Tauri needs lowercase
+  - set CI=true
   # Build Tauri app for Windows (generates NSIS .exe + MSI installer)
   - npm run tauri build
 
@@ -47,4 +49,5 @@ artifacts:
   - path: src-tauri\target\release\pos-kasir-alpiant.exe
     name: WindowsPortable
 
+#mudahan jalan
 test: off
