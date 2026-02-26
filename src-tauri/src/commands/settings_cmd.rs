@@ -3,6 +3,22 @@ use crate::AppState;
 use std::collections::HashMap;
 use tauri::Manager;
 
+// ============================================================================
+// CONSTANTS - ESC/POS Commands
+// ============================================================================
+const ESC_POS_INIT: &[u8] = b"\x1B\x40";           // ESC @ - Initialize
+const ESC_POS_CENTER: &[u8] = b"\x1B\x61\x01";     // ESC a 1 - Center alignment
+const ESC_POS_LEFT: &[u8] = b"\x1B\x61\x00";       // ESC a 0 - Left alignment
+const ESC_POS_BOLD_ON: &[u8] = b"\x1B\x45\x01";    // ESC E 1 - Bold ON
+const ESC_POS_BOLD_OFF: &[u8] = b"\x1B\x45\x00";   // ESC E 0 - Bold OFF
+const ESC_POS_DOUBLE_WIDTH: &[u8] = b"\x1D\x21\x11"; // GS ! 0x11 - Double width+height
+const ESC_POS_NORMAL: &[u8] = b"\x1D\x21\x00";     // GS ! 0x00 - Normal size
+const ESC_POS_CUT: &[u8] = b"\x1D\x56\x41";        // GS V A - Full cut
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
 /// Helper: create Command yang TIDAK muncul console window di Windows
 #[cfg(target_os = "windows")]
 fn win_cmd(program: &str) -> std::process::Command {
@@ -11,6 +27,139 @@ fn win_cmd(program: &str) -> std::process::Command {
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     cmd
 }
+
+/// Convert boolean to database string ("1" or "0")
+#[inline]
+fn bool_to_db(b: bool) -> &'static str {
+    if b { "1" } else { "0" }
+}
+
+/// Create temporary file path with unique name
+fn create_temp_file(extension: &str) -> std::path::PathBuf {
+    use std::time::SystemTime;
+    std::env::temp_dir().join(format!(
+        "pos_print_{}_{}.{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        extension
+    ))
+}
+
+/// Format number with thousand separator (optimized)
+fn format_number(n: i64) -> String {
+    let s = n.abs().to_string();
+    let len = s.len();
+    let mut result = String::with_capacity(len + len / 3);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push('.');
+        }
+        result.push(c);
+    }
+    if n < 0 { result.insert(0, '-'); }
+    result
+}
+
+/// RAII wrapper for temporary file cleanup
+struct TempFile(std::path::PathBuf);
+impl TempFile {
+    fn new(extension: &str) -> Self {
+        TempFile(create_temp_file(extension))
+    }
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Generate HTML for receipt (single source of truth)
+fn generate_receipt_html(html_content: &str, transaction_id: &str, include_instructions: bool) -> String {
+    let print_instructions = if include_instructions {
+        r#"<div class="print-instructions" id="printInstructions">
+        <h3>📄 Export ke PDF</h3>
+        <ol>
+            <li>Klik tombol "Print" di bawah</li>
+            <li>Pilih "Save as PDF" atau "Microsoft Print to PDF"</li>
+            <li>Pilih lokasi penyimpanan</li>
+            <li>Klik "Save"</li>
+        </ol>
+        <button class="btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+        <button class="btn" onclick="document.getElementById('printInstructions').style.display='none'" style="background:#6c757d;margin-left:5px;">Sembunyikan Panduan</button>
+    </div>
+    <script>
+        setTimeout(() => {
+            const instructions = document.getElementById('printInstructions');
+            if (instructions) { instructions.style.opacity = '0.5'; }
+        }, 5000);
+    </script>"#
+    } else {
+        ""
+    };
+
+    format!(r#"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Struk Penjualan - {transaction_id}</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        @page {{ size: auto; margin: 0; }}
+        body {{
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #000;
+            background: #fff;
+            width: 58mm;
+            min-height: 100vh;
+            padding: 3mm;
+        }}
+        .receipt-container {{ width: 100%; max-width: 58mm; margin: 0 auto; }}
+        .header {{ text-align: center; margin-bottom: 10px; border-bottom: 1px dashed #000; padding-bottom: 10px; }}
+        .store-name {{ font-size: 16px; font-weight: bold; margin-bottom: 5px; }}
+        .store-info {{ font-size: 10px; margin-bottom: 3px; }}
+        .divider {{ border-bottom: 1px dashed #000; margin: 8px 0; }}
+        .divider-double {{ border-bottom: 2px solid #000; margin: 8px 0; }}
+        .items-table {{ width: 100%; border-collapse: collapse; margin: 8px 0; }}
+        .items-table th {{ text-align: left; border-bottom: 1px solid #000; padding: 4px 0; font-size: 11px; }}
+        .items-table td {{ padding: 4px 0; vertical-align: top; }}
+        .item-name {{ width: 55%; }}
+        .item-qty {{ width: 15%; text-align: center; }}
+        .item-price {{ width: 30%; text-align: right; }}
+        .totals {{ margin-top: 10px; }}
+        .totals-row {{ display: flex; justify-content: space-between; margin: 3px 0; }}
+        .totals-row.total {{ font-weight: bold; font-size: 14px; border-top: 1px solid #000; padding-top: 5px; margin-top: 5px; }}
+        .footer {{ text-align: center; margin-top: 15px; font-size: 10px; }}
+        .barcode {{ text-align: center; margin: 10px 0; font-family: 'Libre Barcode 39 Text', cursive; font-size: 18px; }}
+        @media print {{ body {{ width: 58mm; padding: 0; }} .receipt-container {{ width: 100%; }} }}
+        .print-instructions {{ position: fixed; top: 10px; right: 10px; background: #f0f0f0; padding: 15px; border-radius: 5px; font-family: Arial, sans-serif; font-size: 12px; max-width: 300px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }}
+        .print-instructions h3 {{ margin-bottom: 10px; color: #333; }}
+        .print-instructions ol {{ margin-left: 20px; }}
+        .print-instructions li {{ margin: 5px 0; }}
+        .print-instructions .btn {{ display: inline-block; background: #007bff; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none; margin-top: 10px; cursor: pointer; }}
+        .print-instructions .btn:hover {{ background: #0056b3; }}
+    </style>
+</head>
+<body>
+    {print_instructions}
+    <div class="receipt-container">
+        {html_content}
+    </div>
+</body>
+</html>"#, transaction_id = transaction_id, html_content = html_content, print_instructions = print_instructions)
+}
+
+// ============================================================================
+// MAIN COMMANDS
+// ============================================================================
 
 /// Ambil semua setting dari DB dan bentuk struct AppSettings
 #[tauri::command]
@@ -107,6 +256,7 @@ pub async fn save_settings(
     crate::auth::guard::validate_admin(&state, &session_token)?;
 
     let kvs = vec![
+        // Company
         ("company.store_name", payload.company.store_name),
         ("company.address", payload.company.address),
         ("company.phone", payload.company.phone),
@@ -114,64 +264,22 @@ pub async fn save_settings(
         ("company.website", payload.company.website),
         ("company.logo_path", payload.company.logo_path),
         ("company.tax_number", payload.company.tax_number),
-        (
-            "receipt.show_logo",
-            if payload.receipt.show_logo {
-                "1".into()
-            } else {
-                "0".into()
-            },
-        ),
+        // Receipt
+        ("receipt.show_logo", bool_to_db(payload.receipt.show_logo).to_string()),
         ("receipt.header_text", payload.receipt.header_text),
         ("receipt.footer_text", payload.receipt.footer_text),
-        (
-            "receipt.show_cashier_name",
-            if payload.receipt.show_cashier_name {
-                "1".into()
-            } else {
-                "0".into()
-            },
-        ),
-        (
-            "receipt.show_tax_detail",
-            if payload.receipt.show_tax_detail {
-                "1".into()
-            } else {
-                "0".into()
-            },
-        ),
-        (
-            "receipt.show_discount_detail",
-            if payload.receipt.show_discount_detail {
-                "1".into()
-            } else {
-                "0".into()
-            },
-        ),
+        ("receipt.show_cashier_name", bool_to_db(payload.receipt.show_cashier_name).to_string()),
+        ("receipt.show_tax_detail", bool_to_db(payload.receipt.show_tax_detail).to_string()),
+        ("receipt.show_discount_detail", bool_to_db(payload.receipt.show_discount_detail).to_string()),
         ("receipt.paper_width", payload.receipt.paper_width),
         ("receipt.copies", payload.receipt.copies.to_string()),
-        (
-            "tax.is_enabled",
-            if payload.tax.is_enabled {
-                "1".into()
-            } else {
-                "0".into()
-            },
-        ),
+        // Tax
+        ("tax.is_enabled", bool_to_db(payload.tax.is_enabled).to_string()),
         ("tax.rate", payload.tax.rate.to_string()),
         ("tax.label", payload.tax.label),
-        (
-            "tax.is_included",
-            if payload.tax.is_included {
-                "1".into()
-            } else {
-                "0".into()
-            },
-        ),
-        (
-            "app.low_stock_threshold",
-            payload.low_stock_threshold.to_string(),
-        ),
+        ("tax.is_included", bool_to_db(payload.tax.is_included).to_string()),
+        // App
+        ("app.low_stock_threshold", payload.low_stock_threshold.to_string()),
         ("app.printer_port", payload.printer_port),
         ("app.timezone", payload.timezone),
     ];
@@ -523,51 +631,37 @@ pub async fn export_receipt_pdf(
     transaction_id: String,
 ) -> Result<String, String> {
     crate::auth::guard::validate_session(&state, &session_token)?;
-    
+
     // Get documents directory
     let docs_dir = app_handle
         .path()
         .document_dir()
         .map_err(|e| format!("Gagal akses folder Documents: {}", e))?;
-    
+
     let receipts_dir = docs_dir.join("POS-Kasir-Receipts");
     std::fs::create_dir_all(&receipts_dir)
         .map_err(|e| format!("Gagal buat folder: {}", e))?;
-    
-    let filename = format!("Struk_{}_{}.html", 
-        transaction_id.split('-').next().unwrap_or("TX"),
-        chrono::Local::now().format("%Y%m%d_%H%M%S")
-    );
+
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let tx_prefix = transaction_id.split('-').next().unwrap_or("TX");
+
+    // Generate HTML with instructions (for interactive use)
+    let filename = format!("Struk_{}_{}.pdf.html", tx_prefix, timestamp);
     let file_path = receipts_dir.join(&filename);
-    
-    // Wrap HTML with print styling
-    let full_html = format!(r#"<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Struk Penjualan</title>
-    <style>
-        @media print {{
-            @page {{ size: A4; margin: 10mm; }}
-            body {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
-        }}
-        @media screen {{
-            body {{ background: #f0f0f0; padding: 20px; }}
-            .receipt-container {{ background: white; max-width: 210mm; margin: 0 auto; padding: 20mm; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="receipt-container">
-        {}
-    </div>
-</body>
-</html>"#, html_content);
-    
-    std::fs::write(&file_path, full_html)
+    let full_html = generate_receipt_html(&html_content, &transaction_id, true);
+    std::fs::write(&file_path, &full_html)
         .map_err(|e| format!("Gagal simpan file: {}", e))?;
-    
-    Ok(file_path.to_string_lossy().to_string())
+
+    // Generate plain HTML (for batch printing)
+    let plain_filename = format!("Struk_{}_{}_plain.html", tx_prefix, timestamp);
+    let plain_path = receipts_dir.join(&plain_filename);
+    let plain_html = generate_receipt_html(&html_content, &transaction_id, false);
+    std::fs::write(&plain_path, &plain_html)
+        .map_err(|e| format!("Gagal simpan file plain: {}", e))?;
+
+    Ok(format!("File tersimpan di:\n\n1. {}\n   (dengan panduan print)\n\n2. {}\n   (tanpa panduan, siap print)", 
+        file_path.to_string_lossy(), 
+        plain_path.to_string_lossy()))
 }
 
 /// Print receipt via ESC/POS (thermal printer)
@@ -611,23 +705,23 @@ pub async fn print_receipt(
     let footer = get_setting(&state, "receipt.footer_text").await.unwrap_or("Terima Kasih!".to_string());
 
     // Build ESC/POS receipt
-    let mut esc: Vec<u8> = Vec::new();
+    let mut esc: Vec<u8> = Vec::with_capacity(1024);
 
     // Init printer
-    esc.extend_from_slice(b"\x1B\x40"); // ESC @ — Initialize
+    esc.extend_from_slice(ESC_POS_INIT);
 
     // Center align
-    esc.extend_from_slice(b"\x1B\x61\x01"); // ESC a 1 — Center
+    esc.extend_from_slice(ESC_POS_CENTER);
 
     // Bold + Double height for store name
-    esc.extend_from_slice(b"\x1B\x45\x01"); // ESC E 1 — Bold ON
-    esc.extend_from_slice(b"\x1D\x21\x11"); // GS ! 0x11 — Double width+height
+    esc.extend_from_slice(ESC_POS_BOLD_ON);
+    esc.extend_from_slice(ESC_POS_DOUBLE_WIDTH);
     esc.extend_from_slice(store_name.as_bytes());
     esc.push(b'\n');
 
     // Reset size
-    esc.extend_from_slice(b"\x1D\x21\x00"); // GS ! 0 — Normal size
-    esc.extend_from_slice(b"\x1B\x45\x00"); // ESC E 0 — Bold OFF
+    esc.extend_from_slice(ESC_POS_NORMAL);
+    esc.extend_from_slice(ESC_POS_BOLD_OFF);
 
     if !address.is_empty() {
         esc.extend_from_slice(address.as_bytes());
@@ -638,7 +732,7 @@ pub async fn print_receipt(
     esc.extend_from_slice(b"================================\n");
 
     // Left align for items
-    esc.extend_from_slice(b"\x1B\x61\x00"); // ESC a 0 — Left
+    esc.extend_from_slice(ESC_POS_LEFT);
 
     // Transaction info
     esc.extend_from_slice(format!("No: {}\n", &tx.0[..8.min(tx.0.len())]).as_bytes());
@@ -672,16 +766,14 @@ pub async fn print_receipt(
     esc.extend_from_slice(b"================================\n");
 
     // Footer (center)
-    esc.extend_from_slice(b"\x1B\x61\x01"); // Center
+    esc.extend_from_slice(ESC_POS_CENTER);
     esc.extend_from_slice(footer.as_bytes());
     esc.push(b'\n');
     esc.push(b'\n');
 
     // Cut paper (thermal)
-    // Note: Form Feed (0x0C) removed for Windows compatibility
-    // Thermal printers handle paper feed automatically
-    esc.extend_from_slice(b"\x1D\x56\x41\x03"); // GS V A 3 — Partial cut (thermal)
-    // Add extra line feeds instead of Form Feed for better cross-platform support
+    esc.extend_from_slice(ESC_POS_CUT);
+    esc.extend_from_slice(b"\x03"); // Partial cut
     esc.extend_from_slice(b"\n\n\n");
 
     // Kirim ke printer
@@ -704,22 +796,22 @@ pub async fn test_print(
     }
 
     // Build test receipt
-    let mut esc: Vec<u8> = Vec::new();
-    esc.extend_from_slice(b"\x1B\x40"); // Init
-    esc.extend_from_slice(b"\x1B\x61\x01"); // Center
-    esc.extend_from_slice(b"\x1B\x45\x01"); // Bold
-    esc.extend_from_slice(b"\x1D\x21\x11"); // Double
+    let mut esc: Vec<u8> = Vec::with_capacity(512);
+    esc.extend_from_slice(ESC_POS_INIT);
+    esc.extend_from_slice(ESC_POS_CENTER);
+    esc.extend_from_slice(ESC_POS_BOLD_ON);
+    esc.extend_from_slice(ESC_POS_DOUBLE_WIDTH);
     esc.extend_from_slice(b"TEST PRINT\n");
-    esc.extend_from_slice(b"\x1D\x21\x00"); // Reset size
-    esc.extend_from_slice(b"\x1B\x45\x00"); // No bold
+    esc.extend_from_slice(ESC_POS_NORMAL);
+    esc.extend_from_slice(ESC_POS_BOLD_OFF);
     esc.extend_from_slice(b"================================\n");
     esc.extend_from_slice(b"Printer berhasil terhubung!\n");
     esc.extend_from_slice(b"POS Kasir Alpiant\n");
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     esc.extend_from_slice(format!("{}\n", now).as_bytes());
     esc.extend_from_slice(b"================================\n\n\n");
-    esc.extend_from_slice(b"\x1D\x56\x41\x03"); // Cut (thermal)
-    // Add extra line feeds instead of Form Feed for better cross-platform support
+    esc.extend_from_slice(ESC_POS_CUT);
+    esc.extend_from_slice(b"\x03"); // Partial cut
     esc.extend_from_slice(b"\n\n\n");
 
     send_to_printer(&port, &esc).await?;
@@ -745,22 +837,22 @@ pub async fn print_barcode_labels(
         return Err("Tidak ada label untuk dicetak.".into());
     }
 
-    let mut esc: Vec<u8> = Vec::new();
+    let mut esc: Vec<u8> = Vec::with_capacity(labels.len() * 200);
 
     // Init printer
-    esc.extend_from_slice(b"\x1B\x40"); // ESC @ — Initialize
+    esc.extend_from_slice(ESC_POS_INIT);
 
     for label in &labels {
         for _ in 0..label.qty {
             // Center align
-            esc.extend_from_slice(b"\x1B\x61\x01"); // ESC a 1 — Center
+            esc.extend_from_slice(ESC_POS_CENTER);
 
             // Product name (bold)
-            esc.extend_from_slice(b"\x1B\x45\x01"); // Bold ON
+            esc.extend_from_slice(ESC_POS_BOLD_ON);
             let name: String = label.name.chars().take(24).collect();
             esc.extend_from_slice(name.as_bytes());
             esc.push(b'\n');
-            esc.extend_from_slice(b"\x1B\x45\x00"); // Bold OFF
+            esc.extend_from_slice(ESC_POS_BOLD_OFF);
 
             // Price
             let price_str = format!("Rp {}", format_number(label.price as i64));
@@ -794,8 +886,8 @@ pub async fn print_barcode_labels(
 
     // Feed and cut
     esc.extend_from_slice(b"\n\n");
-    esc.extend_from_slice(b"\x1D\x56\x41\x03"); // GS V A 3 — Partial cut
-    // Add extra line feeds instead of Form Feed for better cross-platform support
+    esc.extend_from_slice(ESC_POS_CUT);
+    esc.extend_from_slice(b"\x03"); // Partial cut
     esc.extend_from_slice(b"\n\n\n");
 
     send_to_printer(&port, &esc).await?;
@@ -818,44 +910,34 @@ pub struct BarcodeLabelItem {
 #[cfg(unix)]
 async fn print_via_cups(printer_name: &str, data: &[u8]) -> Result<(), String> {
     use std::io::Write;
-    
+
     eprintln!("[PRINTER CUPS] Printing to CUPS printer: {}", printer_name);
-    
-    // Create unique temporary file to avoid race condition
-    let temp_path = std::env::temp_dir().join(format!(
-        "pos_print_{}_{}.bin", 
-        std::process::id(), 
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    ));
-    
+
+    // Create temporary file with RAII cleanup
+    let temp_file = TempFile::new("bin");
+
     // Write data to temp file
-    let mut file = std::fs::File::create(&temp_path)
+    let mut file = std::fs::File::create(temp_file.path())
         .map_err(|e| format!("Gagal buat file temporary: {}", e))?;
     file.write_all(data)
         .map_err(|e| format!("Gagal tulis data: {}", e))?;
     drop(file);
-    
+
     // Use lp command to print with raw option for ESC/POS data
     let output = std::process::Command::new("lp")
         .arg("-d")
         .arg(printer_name)
         .arg("-o")
         .arg("raw")
-        .arg(&temp_path)
+        .arg(temp_file.path())
         .output()
         .map_err(|e| format!("Gagal jalankan lp command: {}. Pastikan CUPS terinstall.", e))?;
-    
-    // Cleanup temp file
-    let _ = std::fs::remove_file(&temp_path);
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("CUPS error: {}", stderr));
     }
-    
+
     eprintln!("[PRINTER CUPS] Print job sent successfully");
     Ok(())
 }
@@ -864,91 +946,74 @@ async fn print_via_cups(printer_name: &str, data: &[u8]) -> Result<(), String> {
 #[cfg(target_os = "windows")]
 async fn print_via_windows_spooler(printer_name: &str, data: &[u8]) -> Result<(), String> {
     use std::io::Write;
-    
+
     eprintln!("[PRINTER WIN] Printing to Windows printer: {}", printer_name);
-    
-    // Create unique temporary file
-    let temp_path = std::env::temp_dir().join(format!(
-        "pos_print_{}_{}.bin", 
-        std::process::id(), 
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    ));
-    
+
+    // Create temporary file with RAII cleanup
+    let temp_file = TempFile::new("bin");
+
     // Write ESC/POS data to temp file
-    let mut file = std::fs::File::create(&temp_path)
+    let mut file = std::fs::File::create(temp_file.path())
         .map_err(|e| format!("Gagal buat file temporary: {}", e))?;
     file.write_all(data)
         .map_err(|e| format!("Gagal tulis data: {}", e))?;
     drop(file);
-    
-    let temp_path_str = temp_path.to_string_lossy().to_string();
-    
-    // Method 1: Try `copy /b` to printer share (works for most thermal printers)
-    #[cfg(target_os = "windows")]
-    let copy_result = win_cmd("cmd")
-        .args(["/C", &format!("copy /b \"{}\" \"\\\\localhost\\{}\"", temp_path_str, printer_name)])
+
+    let temp_path_str = temp_file.path().to_string_lossy().to_string();
+
+    // Method 1: PowerShell Out-Printer (most reliable for Windows 10/11)
+    let ps_result = win_cmd("powershell")
+        .args(["-NoProfile", "-Command",
+            &format!("Get-Content -Encoding Byte -Path '{}' | Out-Printer -Name '{}'", temp_path_str, printer_name)])
         .output();
-    #[cfg(not(target_os = "windows"))]
-    let copy_result: Result<std::process::Output, std::io::Error> = Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Windows only"));
-    
+
+    if let Ok(output) = ps_result {
+        if output.status.success() {
+            eprintln!("[PRINTER WIN] Print job sent via PowerShell Out-Printer");
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("[PRINTER WIN] PowerShell Out-Printer failed: {}, trying copy method...", stderr);
+    }
+
+    // Method 2: Try direct file copy to printer (for USB thermal printers)
+    let copy_result = win_cmd("cmd")
+        .args(["/C", &format!("copy /b \"{}\" \"{}\"", temp_path_str, printer_name)])
+        .output();
+
     if let Ok(output) = copy_result {
         if output.status.success() {
-            let _ = std::fs::remove_file(&temp_path);
             eprintln!("[PRINTER WIN] Print job sent via copy /b");
             return Ok(());
         }
         let stderr = String::from_utf8_lossy(&output.stderr);
         eprintln!("[PRINTER WIN] copy /b failed: {}, trying print command...", stderr);
     }
-    
-    // Method 2: Fallback to `print` command
-    #[cfg(target_os = "windows")]
+
+    // Method 3: Fallback to `print` command (legacy)
     let print_result = win_cmd("cmd")
         .args(["/C", &format!("print /d:\"{}\" \"{}\"", printer_name, temp_path_str)])
         .output();
-    #[cfg(not(target_os = "windows"))]
-    let print_result: Result<std::process::Output, std::io::Error> = Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Windows only"));
-    
+
     if let Ok(output) = print_result {
         if output.status.success() {
-            let _ = std::fs::remove_file(&temp_path);
             eprintln!("[PRINTER WIN] Print job sent via print command");
             return Ok(());
         }
         let stderr = String::from_utf8_lossy(&output.stderr);
         eprintln!("[PRINTER WIN] print command failed: {}", stderr);
-    }
-    
-    // Method 3: Try PowerShell Out-Printer as last resort 
-    #[cfg(target_os = "windows")]
-    let ps_result = win_cmd("powershell")
-        .args(["-NoProfile", "-Command", 
-            &format!("Get-Content -Encoding Byte -Path '{}' | Out-Printer -Name '{}'", temp_path_str, printer_name)])
-        .output();
-    #[cfg(not(target_os = "windows"))]
-    let ps_result: Result<std::process::Output, std::io::Error> = Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Windows only"));
-    
-    let _ = std::fs::remove_file(&temp_path);
-    
-    if let Ok(output) = ps_result {
-        if output.status.success() {
-            eprintln!("[PRINTER WIN] Print job sent via PowerShell");
-            return Ok(());
-        }
-        let stderr = String::from_utf8_lossy(&output.stderr);
+
         return Err(format!(
             "Gagal cetak ke printer '{}'!\n\n\
              Pastikan:\n\
-             1. Printer '{}' terdaftar di Windows (Settings → Printers)\n\
-             2. Printer sharing aktif jika pakai copy /b\n\
-             3. Printer menyala dan terhubung\n\n\
+             1. Printer '{}' terdaftar di Windows (Settings → Printers & scanners)\n\
+             2. Nama printer sesuai (case-sensitive)\n\
+             3. Printer menyala dan terhubung\n\
+             4. Driver printer terinstall dengan benar\n\n\
              Error: {}", printer_name, printer_name, stderr
         ));
     }
-    
+
     Err(format!("Tidak dapat mengirim ke printer '{}'. Pastikan printer terdaftar dan menyala.", printer_name))
 }
 
@@ -960,36 +1025,25 @@ async fn print_via_windows_html(html_content: &str, printer_name: Option<&str>) 
     let printer = printer_name.unwrap_or("POS-58");
     eprintln!("[PRINTER WIN HTML] Printing HTML to Windows printer: {}", printer);
 
-    // Create unique temporary file for HTML
-    let temp_path = std::env::temp_dir().join(format!(
-        "pos_print_html_{}_{}.html",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    ));
+    // Create temporary file with RAII cleanup
+    let temp_file = TempFile::new("html");
 
     // Write HTML data to temp file
-    let mut file = std::fs::File::create(&temp_path)
+    let mut file = std::fs::File::create(temp_file.path())
         .map_err(|e| format!("Gagal buat file temporary: {}", e))?;
     file.write_all(html_content.as_bytes())
         .map_err(|e| format!("Gagal tulis data: {}", e))?;
     drop(file);
 
-    let temp_path_str = temp_path.to_string_lossy().to_string();
+    let temp_path_str = temp_file.path().to_string_lossy().to_string();
 
     // Method 1: Try using start command to print HTML file
-    #[cfg(target_os = "windows")]
     let start_result = win_cmd("cmd")
         .args(["/C", &format!("start /w \"\" print /D:\"{}\" \"{}\"", printer, temp_path_str)])
         .output();
-    #[cfg(not(target_os = "windows"))]
-    let start_result: Result<std::process::Output, std::io::Error> = Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Windows only"));
 
     if let Ok(output) = start_result {
         if output.status.success() {
-            let _ = std::fs::remove_file(&temp_path);
             eprintln!("[PRINTER WIN HTML] Print job sent via start command");
             return Ok(());
         }
@@ -998,15 +1052,10 @@ async fn print_via_windows_html(html_content: &str, printer_name: Option<&str>) 
     }
 
     // Method 2: Try PowerShell with Word/IE automation fallback
-    #[cfg(target_os = "windows")]
     let ps_result = win_cmd("powershell")
         .args(["-NoProfile", "-Command",
             &format!("$ie = New-Object -ComObject InternetExplorer.Application; $ie.Navigate('{}'); Start-Sleep -Seconds 2; $ie.ExecWB(6, 1); $ie.Quit(); $ie = $null", temp_path_str)])
         .output();
-    #[cfg(not(target_os = "windows"))]
-    let ps_result: Result<std::process::Output, std::io::Error> = Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Windows only"));
-
-    let _ = std::fs::remove_file(&temp_path);
 
     if let Ok(output) = ps_result {
         if output.status.success() {
@@ -1047,19 +1096,6 @@ async fn get_setting(state: &tauri::State<'_, AppState>, key: &str) -> Option<St
     .await
     .ok()?;
     result.map(|r| r.0)
-}
-
-fn format_number(n: i64) -> String {
-    let s = n.abs().to_string();
-    let mut result = String::new();
-    for (i, c) in s.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            result.push('.');
-        }
-        result.push(c);
-    }
-    if n < 0 { result.push('-'); }
-    result.chars().rev().collect()
 }
 
 async fn send_to_printer(port: &str, data: &[u8]) -> Result<(), String> {
