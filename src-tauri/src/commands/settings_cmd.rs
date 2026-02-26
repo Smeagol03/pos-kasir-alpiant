@@ -599,9 +599,12 @@ pub async fn print_receipt(
     esc.push(b'\n');
     esc.push(b'\n');
 
-    // Cut paper (thermal) + Form Feed (inkjet/laser)
+    // Cut paper (thermal)
+    // Note: Form Feed (0x0C) removed for Windows compatibility
+    // Thermal printers handle paper feed automatically
     esc.extend_from_slice(b"\x1D\x56\x41\x03"); // GS V A 3 — Partial cut (thermal)
-    esc.push(0x0C); // Form Feed — eject page (untuk semua jenis printer)
+    // Add extra line feeds instead of Form Feed for better cross-platform support
+    esc.extend_from_slice(b"\n\n\n");
 
     // Kirim ke printer
     send_to_printer(&port, &esc).await?;
@@ -638,7 +641,8 @@ pub async fn test_print(
     esc.extend_from_slice(format!("{}\n", now).as_bytes());
     esc.extend_from_slice(b"================================\n\n\n");
     esc.extend_from_slice(b"\x1D\x56\x41\x03"); // Cut (thermal)
-    esc.push(0x0C); // Form Feed — eject page (untuk semua jenis printer)
+    // Add extra line feeds instead of Form Feed for better cross-platform support
+    esc.extend_from_slice(b"\n\n\n");
 
     send_to_printer(&port, &esc).await?;
 
@@ -713,7 +717,8 @@ pub async fn print_barcode_labels(
     // Feed and cut
     esc.extend_from_slice(b"\n\n");
     esc.extend_from_slice(b"\x1D\x56\x41\x03"); // GS V A 3 — Partial cut
-    esc.push(0x0C); // Form Feed
+    // Add extra line feeds instead of Form Feed for better cross-platform support
+    esc.extend_from_slice(b"\n\n\n");
 
     send_to_printer(&port, &esc).await?;
 
