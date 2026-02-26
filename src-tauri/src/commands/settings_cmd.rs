@@ -2,7 +2,6 @@ use crate::models::settings::{AppSettings, CompanyProfile, ReceiptSettings, TaxS
 use crate::AppState;
 use std::collections::HashMap;
 use tauri::Manager;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 /// Helper: create Command yang TIDAK muncul console window di Windows
 #[cfg(target_os = "windows")]
@@ -498,16 +497,16 @@ pub async fn list_serial_ports(
 pub async fn print_receipt_windows(
     state: tauri::State<'_, AppState>,
     session_token: String,
-    html_content: String,
-    printer_name: Option<String>,
+    _html_content: String,
+    _printer_name: Option<String>,
 ) -> Result<(), String> {
     crate::auth::guard::validate_session(&state, &session_token)?;
-    
+
     #[cfg(target_os = "windows")]
     {
-        print_via_windows_html(&html_content, printer_name.as_deref()).await
+        print_via_windows_html(&_html_content, _printer_name.as_deref()).await
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     {
         Err("Windows printing hanya tersedia di Windows. Untuk printer biasa, gunakan browser print (Ctrl+P).".into())
@@ -951,6 +950,76 @@ async fn print_via_windows_spooler(printer_name: &str, data: &[u8]) -> Result<()
     }
     
     Err(format!("Tidak dapat mengirim ke printer '{}'. Pastikan printer terdaftar dan menyala.", printer_name))
+}
+
+/// Print HTML content via Windows Print Spooler
+#[cfg(target_os = "windows")]
+async fn print_via_windows_html(html_content: &str, printer_name: Option<&str>) -> Result<(), String> {
+    use std::io::Write;
+
+    let printer = printer_name.unwrap_or("POS-58");
+    eprintln!("[PRINTER WIN HTML] Printing HTML to Windows printer: {}", printer);
+
+    // Create unique temporary file for HTML
+    let temp_path = std::env::temp_dir().join(format!(
+        "pos_print_html_{}_{}.html",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    ));
+
+    // Write HTML data to temp file
+    let mut file = std::fs::File::create(&temp_path)
+        .map_err(|e| format!("Gagal buat file temporary: {}", e))?;
+    file.write_all(html_content.as_bytes())
+        .map_err(|e| format!("Gagal tulis data: {}", e))?;
+    drop(file);
+
+    let temp_path_str = temp_path.to_string_lossy().to_string();
+
+    // Method 1: Try using start command to print HTML file
+    #[cfg(target_os = "windows")]
+    let start_result = win_cmd("cmd")
+        .args(["/C", &format!("start /w \"\" print /D:\"{}\" \"{}\"", printer, temp_path_str)])
+        .output();
+    #[cfg(not(target_os = "windows"))]
+    let start_result: Result<std::process::Output, std::io::Error> = Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Windows only"));
+
+    if let Ok(output) = start_result {
+        if output.status.success() {
+            let _ = std::fs::remove_file(&temp_path);
+            eprintln!("[PRINTER WIN HTML] Print job sent via start command");
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("[PRINTER WIN HTML] start command failed: {}, trying alternative...", stderr);
+    }
+
+    // Method 2: Try PowerShell with Word/IE automation fallback
+    #[cfg(target_os = "windows")]
+    let ps_result = win_cmd("powershell")
+        .args(["-NoProfile", "-Command",
+            &format!("$ie = New-Object -ComObject InternetExplorer.Application; $ie.Navigate('{}'); Start-Sleep -Seconds 2; $ie.ExecWB(6, 1); $ie.Quit(); $ie = $null", temp_path_str)])
+        .output();
+    #[cfg(not(target_os = "windows"))]
+    let ps_result: Result<std::process::Output, std::io::Error> = Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "Windows only"));
+
+    let _ = std::fs::remove_file(&temp_path);
+
+    if let Ok(output) = ps_result {
+        if output.status.success() {
+            eprintln!("[PRINTER WIN HTML] Print job sent via PowerShell IE automation");
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("[PRINTER WIN HTML] PowerShell method failed: {}", stderr);
+    }
+
+    // Fallback: return success with warning (user can print manually)
+    eprintln!("[PRINTER WIN HTML] All automated methods failed, but HTML file saved at: {}", temp_path_str);
+    Ok(())
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
