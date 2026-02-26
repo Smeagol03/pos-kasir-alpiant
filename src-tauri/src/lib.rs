@@ -100,6 +100,8 @@ pub fn run() {
             commands::settings_cmd::print_receipt,
             commands::settings_cmd::test_print,
             commands::settings_cmd::print_barcode_labels,
+            commands::settings_cmd::print_receipt_windows,
+            commands::settings_cmd::export_receipt_pdf,
             // Payment QRIS
             commands::payment_cmd::generate_qris_payment,
             commands::payment_cmd::check_qris_status,
