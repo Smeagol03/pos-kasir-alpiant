@@ -114,13 +114,14 @@ export function ProductGrid() {
     });
   };
 
-  const getProductInitial = (name: string) =>
-    name
+  const getProductInitial = (name: string): string => {
+    const initials = name
       .split(" ")
-      .map((n) => n[0])
+      .map((n) => n.charAt(0))
       .slice(0, 2)
-      .join("")
-      .toUpperCase();
+      .join("");
+    return initials.toUpperCase();
+  };
 
   const getProductColor = (name: string) => {
     const colors = [
@@ -234,7 +235,7 @@ export function ProductGrid() {
                     <ProductImage
                       product={p}
                       getProductColor={getProductColor}
-                      getProductInitial={getProductInitial}
+                      getProductInitial={(name: string): string => getProductInitial(name)}
                     />
                     {isOutOfStock && (
                       <div className="absolute inset-0 bg-background/50 flex items-center justify-center">

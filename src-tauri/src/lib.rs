@@ -6,6 +6,9 @@ pub mod models;
 pub mod encryption;
 pub mod audit;
 pub mod rate_limiter;
+pub mod logger;
+pub mod config;
+pub mod validation;
 
 use auth::session::SessionStore;
 use std::sync::Mutex;
@@ -31,10 +34,35 @@ pub fn run() {
                     .app_data_dir()
                     .expect("Gagal mendapatkan path AppData");
 
+                // Initialize configuration
+                config::init_config();
+
+                // Initialize encryption key
+                if let Err(e) = encryption::init_encryption_key(&app_data_dir) {
+                    eprintln!("⚠️  Warning: Failed to initialize encryption key: {}", e);
+                }
+
+                // Initialize logger
+                if let Err(e) = logger::init_global_logger(&app_data_dir) {
+                    eprintln!("⚠️  Warning: Failed to initialize logger: {}", e);
+                }
+
+                // Log application startup
+                log_info!("APP", "Application starting", serde_json::json!({
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "environment": config::get_config().environment.as_str(),
+                    "app_data_dir": app_data_dir.to_string_lossy()
+                }));
+
                 // Inisialisasi database
                 let pool = database::connection::init_db(&app_data_dir)
                     .await
                     .expect("Gagal inisialisasi database");
+
+                // Log database initialization
+                log_info!("DATABASE", "Database connection pool initialized", serde_json::json!({
+                    "pool_size": pool.size()
+                }));
 
                 // Simpan state
                 app_handle.manage(AppState {
@@ -109,6 +137,12 @@ pub fn run() {
             commands::payment_cmd::save_payment_config,
             commands::payment_cmd::get_payment_config,
             commands::payment_cmd::test_payment_connection,
+            // System
+            commands::system_cmd::get_health_status,
+            commands::system_cmd::create_backup,
+            commands::system_cmd::list_backups,
+            commands::system_cmd::cleanup_backups,
+            commands::system_cmd::get_system_info,
         ])
         .run(tauri::generate_context!())
         .expect("Gagal menjalankan aplikasi");

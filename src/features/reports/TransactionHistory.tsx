@@ -97,7 +97,7 @@ export function TransactionHistory({
       });
       toast({
         title: "Transaksi Dibatalkan",
-        description: `Transaksi ${voidTarget.id.split("-")[0].toUpperCase()} berhasil di-void. Stok telah dikembalikan.`,
+        description: `Transaksi ${(voidTarget.id.split("-")[0] ?? "").toUpperCase()} berhasil di-void. Stok telah dikembalikan.`,
       });
       // Refresh data
       queryClient.invalidateQueries({ queryKey: ["transactions_report"] });
@@ -193,7 +193,7 @@ export function TransactionHistory({
                           : "-"}
                       </TableCell>
                       <TableCell className="text-xs font-mono font-bold text-primary">
-                        {t.id.split("-")[0].toUpperCase()}
+                        {(t.id.split("-")[0] ?? "").toUpperCase()}
                       </TableCell>
                       <TableCell className="text-xs">
                         {t.cashier_name}
@@ -305,7 +305,7 @@ export function TransactionHistory({
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">ID Struk</span>
                     <span className="font-mono font-bold">
-                      {voidTarget.id.split("-")[0].toUpperCase()}
+                      {(voidTarget.id.split("-")[0] ?? "").toUpperCase()}
                     </span>
                   </div>
                   <div className="flex justify-between">

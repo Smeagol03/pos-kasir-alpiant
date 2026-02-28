@@ -7,3 +7,4 @@ pub mod transaction_cmd;
 pub mod user_cmd;
 pub mod activity_cmd;
 pub mod payment_cmd;
+pub mod system_cmd;

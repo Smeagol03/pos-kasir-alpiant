@@ -100,7 +100,26 @@ export function BulkImportDialog({
         workbook = XLSX.read(buffer, { type: "array" });
       }
 
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        toast({
+          variant: "destructive",
+          title: "File Tidak Valid",
+          description: "File tidak memiliki sheet.",
+        });
+        return;
+      }
+
+      const sheet = workbook.Sheets[firstSheetName];
+      if (!sheet) {
+        toast({
+          variant: "destructive",
+          title: "Sheet Tidak Ditemukan",
+          description: "Sheet pertama tidak dapat dibaca.",
+        });
+        return;
+      }
+
       const rawData = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
         defval: "",
       });

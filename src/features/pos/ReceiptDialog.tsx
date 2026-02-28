@@ -70,7 +70,7 @@ export function ReceiptDialog({
       </div>
       
       <div class="meta">
-        <div class="meta-row"><span>No. Struk</span><span>#${transaction.id.split('-')[0].toUpperCase()}</span></div>
+        <div class="meta-row"><span>No. Struk</span><span>#${(transaction.id.split('-')[0] ?? '').toUpperCase()}</span></div>
         <div class="meta-row"><span>Tanggal</span><span>${format(txDate, "dd/MM/yy HH:mm")}</span></div>
         <div class="meta-row"><span>Kasir</span><span>${detail.transaction.cashier_name}</span></div>
       </div>
@@ -228,38 +228,41 @@ export function ReceiptDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-0 overflow-hidden border-none shadow-2xl rounded-2xl">
-        <div className="bg-slate-900 dark:bg-slate-950 p-6 text-white flex items-center justify-between relative overflow-hidden">
+      <DialogContent className="max-w-md p-0 overflow-hidden border-none shadow-2xl rounded-2xl max-h-[90vh] flex flex-col">
+        {/* Header - Fixed */}
+        <div className="bg-slate-900 dark:bg-slate-950 p-6 text-white flex items-center justify-between relative overflow-hidden flex-shrink-0">
           {/* Decorative circles */}
           <div className="absolute -top-10 -right-10 w-32 h-32 bg-primary/20 rounded-full blur-2xl" />
           <div className="absolute top-10 -left-10 w-24 h-24 bg-blue-500/20 rounded-full blur-xl" />
-          
+
           <div className="flex items-center gap-4 relative z-10">
             <div className="bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-white/10">
               <CheckCircle2 className="h-6 w-6 text-green-400" />
             </div>
             <div>
               <h2 className="text-xl font-black leading-tight tracking-tight">Transaksi Sukses</h2>
-              <p className="text-slate-400 text-xs font-medium mt-0.5">#{transaction.id.split("-")[0].toUpperCase()}</p>
+              <p className="text-slate-400 text-xs font-medium mt-0.5">#{(transaction.id.split("-")[0] ?? "").toUpperCase()}</p>
             </div>
           </div>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="text-white hover:bg-white/10 relative z-10 rounded-full"
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-white hover:bg-white/10 relative z-10 rounded-full flex-shrink-0"
             onClick={() => onOpenChange(false)}
           >
             <X className="h-5 w-5" />
           </Button>
         </div>
 
-        <div className="p-8 bg-slate-100 dark:bg-slate-900 flex justify-center overflow-y-auto max-h-[70vh]">
-          {/* Paper Receipt Preview */}
-          <div
-            ref={receiptRef}
-            className="bg-white text-black p-5 shadow-[0_4px_20px_-5px_rgba(0,0,0,0.1)] w-full max-w-[300px] relative receipt-paper"
-            style={{ fontFamily: "'Courier New', Courier, monospace", fontSize: '12px' }}
-          >
+        {/* Receipt Content - Scrollable */}
+        <div className="flex-1 overflow-y-auto p-8 bg-slate-100 dark:bg-slate-900">
+          <div className="flex justify-center">
+            {/* Paper Receipt Preview */}
+            <div
+              ref={receiptRef}
+              className="bg-white text-black p-5 shadow-[0_4px_20px_-5px_rgba(0,0,0,0.1)] w-full max-w-[300px] relative receipt-paper"
+              style={{ fontFamily: "'Courier New', Courier, monospace", fontSize: '12px' }}
+            >
             {/* Torn paper effect top */}
             <div className="absolute top-0 left-0 right-0 h-1 bg-[linear-gradient(45deg,transparent_33.333%,#fff_33.333%,#fff_66.667%,transparent_66.667%),linear-gradient(-45deg,transparent_33.333%,#fff_33.333%,#fff_66.667%,transparent_66.667%)] bg-[length:10px_20px] bg-[position:0_-10px] transform rotate-180 -mt-2"></div>
             
@@ -279,7 +282,7 @@ export function ReceiptDialog({
             <div className="meta" style={{ marginBottom: '15px', paddingBottom: '15px', borderBottom: '1px dashed #e2e8f0', fontSize: '11px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                 <span style={{ color: '#64748b' }}>No. Struk</span>
-                <span style={{ fontWeight: 'bold' }}>#{transaction.id.split("-")[0].toUpperCase()}</span>
+                <span style={{ fontWeight: 'bold' }}>#{(transaction.id.split("-")[0] ?? "").toUpperCase()}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                 <span style={{ color: '#64748b' }}>Tanggal</span>
@@ -358,9 +361,11 @@ export function ReceiptDialog({
             {/* Torn paper effect bottom */}
             <div className="absolute bottom-0 left-0 right-0 h-1 bg-[linear-gradient(45deg,transparent_33.333%,#fff_33.333%,#fff_66.667%,transparent_66.667%),linear-gradient(-45deg,transparent_33.333%,#fff_33.333%,#fff_66.667%,transparent_66.667%)] bg-[length:10px_20px] bg-[position:0_-10px] -mb-2"></div>
           </div>
+          </div>
         </div>
 
-        <div className="p-4 bg-white dark:bg-slate-900 border-t z-20 relative">
+        {/* Footer - Fixed */}
+        <div className="p-4 bg-white dark:bg-slate-900 border-t z-20 relative flex-shrink-0">
           {/* Print Mode Selector */}
           <div className="flex gap-2 mb-3">
             <button

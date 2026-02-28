@@ -7,9 +7,12 @@ environment:
 
 cache:
   - node_modules -> package-lock.json
-  - '%USERPROFILE%\.cargo\registry'
-  - '%USERPROFILE%\.cargo\git'
-  - src-tauri\target -> src-tauri\Cargo.lock
+  - '%USERPROFILE%\.cargo\bin'
+  - '%USERPROFILE%\.cargo\registry\index'
+  - '%USERPROFILE%\.cargo\registry\cache'
+  - src-tauri\target\release\build
+  - src-tauri\target\release\deps
+  - src-tauri\target\.rustc_info.json
 
 install:
   # Install Node.js
@@ -21,6 +24,9 @@ install:
   - rustup target add x86_64-pc-windows-msvc
   - rustc --version
   - cargo --version
+
+  # Pre-warm cargo registry (fallback if cache fails)
+  - cd src-tauri && cargo fetch && cd ..
 
   # Install npm dependencies
   - npm ci
